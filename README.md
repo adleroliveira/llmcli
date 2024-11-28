@@ -1,37 +1,113 @@
-# Bedrock CLI
+# LLMCLI - AWS Bedrock AI Assistant
 
 ## Description
 
-The Bedrock CLI is a command-line tool that allows you to interact with the Bedrock AI model. It provides various tools and capabilities to help you accomplish tasks, such as file management, directory listing, and more.
+LLMCLI is a command-line interface that enables interactive conversations with AWS Bedrock's AI models. It comes with built-in tools for file operations, command execution, and process management, making it a powerful assistant for various CLI tasks.
+
+## Installation
+
+You can install LLMCLI directly from GitHub:
+
+```bash
+npx github:adleroliveira/llmcli
+```
+
+Or install it globally:
+
+```bash
+npm install -g github:adleroliveira/llmcli
+```
+
+## Prerequisites
+
+- AWS Account with Bedrock access enabled
+- AWS credentials configured locally or AWS IAM role with appropriate permissions
+- Node.js 18 or higher
+- pnpm (recommended) or npm
+
+## Commands
+
+- `llmcli`: Starts an interactive AI assistant session
+- `llmcli configure` or `llmcli config`: Configure AWS credentials and Bedrock settings
+- `llmcli cleanup [-f|--force]`: Remove all saved configurations and cached data
+- `llmcli --version`: Display the CLI version
+- `llmcli --help`: Show help information
+
+## Features
+
+The CLI includes several built-in tools that the AI assistant can use:
+
+### File Operations
+
+- Directory listing and navigation
+- File reading and writing capabilities
+- File content analysis and manipulation
+
+### Command Execution
+
+- Execute shell commands through the AI assistant
+- Background process management
+- Graceful shutdown handling
+
+### Interactive Experience
+
+- Real-time command validation
+- Progress indicators for long-running operations
+- Helpful error messages and recovery options
+
+## Configuration
+
+On first run or when using `llmcli configure`, the tool will:
+
+1. Validate AWS credentials
+2. Check Bedrock model access
+3. Set up necessary configurations
+4. Store settings securely for future sessions
+
+## Error Handling
+
+The CLI includes comprehensive error handling:
+
+- Automatic credential validation
+- Interactive reconfiguration prompts
+- Graceful process termination
+- Background process cleanup
+
+## Development
+
+To work on the LLMCLI locally:
+
+```bash
+# Clone the repository
+git clone https://github.com/adleroliveira/llmcli.git
+
+# Install dependencies
+pnpm install
+
+# Build the project
+pnpm build
+
+# Run in development mode
+pnpm dev
+```
+
+## Security
+
+LLMCLI requires AWS credentials to function. It's recommended to:
+
+- Use AWS IAM roles when possible
+- Restrict Bedrock model access appropriately
+- Never commit credentials to version control
+- Use AWS credential best practices
+
+## License
+
+ISC License
 
 ## Author
 
 Adler Oliveira
 
-## Getting Started
-
-1. Install the necessary dependencies by running `npm install` in your project directory.
-2. Configure your AWS credentials and Bedrock model access by running `npm run configure` or `npm run config`.
-3. Once the configuration is set up, you can start the CLI by running `npm start`.
-
-## Usage
-
-The Bedrock CLI provides the following commands:
-
-- `configure` or `config`: Sets up your AWS credentials and Bedrock model access.
-- `cleanup`: Removes all saved configurations, credentials, and cached data.
-
-When you start the CLI without any command, it will automatically validate your configuration and credentials, and then launch the interactive CLI session. In the CLI, you can use the following tools:
-
-- `displayFiles`: Displays files and directories in the current working directory.
-- `getFiles`: Returns a list of files and directories for LLM processing.
-- `readFile`: Reads and returns the contents of a file in the current directory.
-- `writeFile`: Creates a new file or overwrites an existing file in the current directory.
-
 ## Contributing
 
-If you would like to contribute to this project, please follow the guidelines outlined in the [CONTRIBUTING.md](CONTRIBUTING.md) file.
-
-## License
-
-This project is licensed under the [MIT License](LICENSE).
+Contributions are welcome! Please feel free to submit a Pull Request.

@@ -65,7 +65,39 @@ program
   .name(packageJson.name)
   .description(packageJson.description)
   .version(packageJson.version)
-  .exitOverride();
+  .addHelpText(
+    "after",
+    chalk.cyan(`
+    Detailed Usage Guide:
+    ===================
+    
+    Configuration:
+      Initial setup:    ${chalk.bold(`${program.name()} configure`)}
+      Update settings:  ${chalk.bold(`${program.name()} config`)}
+      Reset everything: ${chalk.bold(`${program.name()} cleanup`)}
+    
+    Command Options:
+      cleanup:
+        -f, --force    Skip confirmation prompt during cleanup
+    
+    Examples:
+      # Start the CLI with default settings
+      $ ${program.name()}
+    
+      # Configure AWS credentials
+      $ ${program.name()} configure
+    
+      # Force cleanup without confirmation
+      $ ${program.name()} cleanup --force
+    
+    Additional Information:
+    - AWS credentials are required for using this CLI
+    - The CLI validates credentials and Bedrock model access on startup
+    - Use Ctrl+C to exit the CLI at any time
+    
+    ${chalk.gray("Version: " + packageJson.version)}
+    `)
+  );
 
 async function validateCredentialsAndAccess(): Promise<boolean> {
   const credSpinner = ora("Validating AWS credentials...").start();
@@ -154,6 +186,69 @@ async function validateCredentialsAndAccess(): Promise<boolean> {
   }
 }
 
+// Default action when no command is provided
+program
+  .command("start", { isDefault: true })
+  .description("Start the CLI interface")
+  .action(async () => {
+    try {
+      // Your existing default action code here
+      const spinner = ora("Checking configuration...").start();
+      if (!configManager.hasValidConfig()) {
+        spinner.info("No configuration found");
+        console.log(
+          chalk.cyan(
+            `Use ${chalk.bold(
+              `${program.name()} configure`
+            )} to set up your AWS credentials.`
+          )
+        );
+        await configManager.setupInitialConfig();
+      } else {
+        spinner.succeed("Configuration found");
+      }
+
+      const credentialsValid = await validateCredentialsAndAccess();
+
+      if (credentialsValid) {
+        console.log(
+          chalk.gray(
+            `\nTip: You can update your configuration anytime using ${chalk.bold(
+              `${program.name()} configure`
+            )}`
+          )
+        );
+
+        const config = configManager.getConfig();
+
+        const cli = new BedrockCLI({
+          modelId: config.bedrock!.modelId,
+          region: config.awsRegion,
+          systemPrompt: [
+            {
+              text: "You are a helpful AI assistant. You provide clear, concise responses and can use various tools when available to help users accomplish their tasks.",
+            },
+          ],
+          tools: [
+            createDisplayDirectoryTool(),
+            createFileListTool(),
+            createFileReadTool(),
+            createFileWriteTool(),
+            createCommandExecutionTool(),
+            createBackgroundCommandTool(),
+          ],
+          credentials: configManager.getCredentials()!,
+        });
+
+        await cli.start();
+      }
+    } catch (error) {
+      console.error(chalk.red("\nAn error occurred:"));
+      console.error(error);
+      process.exit(1);
+    }
+  });
+
 program
   .command("configure")
   .alias("config")
@@ -197,67 +292,5 @@ program
       process.exit(1);
     }
   });
-
-// Default action when no command is provided
-program.action(async () => {
-  try {
-    // Check if config exists and is valid
-    const spinner = ora("Checking configuration...").start();
-    if (!configManager.hasValidConfig()) {
-      spinner.info("No configuration found");
-      console.log(
-        chalk.cyan(
-          `Use ${chalk.bold(
-            `${program.name()} configure`
-          )} to set up your AWS credentials.`
-        )
-      );
-      await configManager.setupInitialConfig();
-    } else {
-      spinner.succeed("Configuration found");
-    }
-
-    // Validate credentials and handle invalid cases
-    const credentialsValid = await validateCredentialsAndAccess();
-
-    if (credentialsValid) {
-      console.log(
-        chalk.gray(
-          `\nTip: You can update your configuration anytime using ${chalk.bold(
-            `${program.name()} configure`
-          )}`
-        )
-      );
-
-      // Get configuration
-      const config = configManager.getConfig();
-
-      const cli = new BedrockCLI({
-        modelId: config.bedrock!.modelId,
-        region: config.awsRegion,
-        systemPrompt: [
-          {
-            text: "You are a helpful AI assistant. You provide clear, concise responses and can use various tools when available to help users accomplish their tasks.",
-          },
-        ],
-        tools: [
-          createDisplayDirectoryTool(),
-          createFileListTool(),
-          createFileReadTool(),
-          createFileWriteTool(),
-          createCommandExecutionTool(),
-          createBackgroundCommandTool(),
-        ],
-        credentials: configManager.getCredentials()!,
-      });
-
-      await cli.start();
-    }
-  } catch (error) {
-    console.error(chalk.red("\nAn error occurred:"));
-    console.error(error);
-    process.exit(1);
-  }
-});
 
 program.parse();
