@@ -21,17 +21,23 @@ import {
 } from "./tools/FileReading.js";
 import { createCommandExecutionTool } from "./tools/CommandExecution.js";
 import { createBackgroundCommandTool } from "./tools/BackgroundExecution.js";
+import { createSystemInfoTool } from "./tools/SystemInformation.js";
 import { processManager } from "./BackgroundProcessManager.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+let currentCLI: BedrockCLI | null = null;
 
 // Graceful shutdown handler
 const handleShutdown = async (signal: string) => {
   console.log(
     chalk.yellow(`\n\nReceived ${signal}. Shutting down gracefully...`)
   );
-  await processManager.cleanup();
+  if (currentCLI) {
+    await currentCLI.cleanup();
+  }
+  await processManager.cleanup(8000, true);
   process.exit(0);
 };
 
@@ -236,10 +242,13 @@ program
             createFileWriteTool(),
             createCommandExecutionTool(),
             createBackgroundCommandTool(),
+            createSystemInfoTool(),
           ],
           credentials: configManager.getCredentials()!,
+          assistantName: "Sage",
         });
 
+        currentCLI = cli;
         await cli.start();
       }
     } catch (error) {

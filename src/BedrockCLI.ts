@@ -5,6 +5,9 @@ import { SystemContentBlock } from "@aws-sdk/client-bedrock-runtime";
 import { AwsCredentials } from "./ConfigManager";
 import { processManager } from "./BackgroundProcessManager.js";
 
+// Add type for ChalkFunction
+type ChalkFunction = typeof chalk.red;
+
 interface BedrockCLIConfig {
   modelId: string;
   maxTokens?: number;
@@ -16,6 +19,8 @@ interface BedrockCLIConfig {
   sessionId?: string;
   tools?: Tool[];
   credentials: AwsCredentials;
+  assistantName?: string;
+  toolOutputPrefix?: string;
 }
 
 class BedrockCLI {
@@ -27,7 +32,9 @@ class BedrockCLI {
   private tools: Map<string, Tool>;
   private isRunning: boolean = false;
   private cleanupPromise: Promise<void> | null = null;
-  private goodbyeShown: boolean = false;
+  private readonly assistantName: string;
+  private readonly toolOutputPrefix: string;
+  private readonly MAX_WIDTH = 100;
 
   constructor(config: BedrockCLIConfig) {
     this.agent = new BedrockAgent({
@@ -49,6 +56,8 @@ class BedrockCLI {
     ];
     this.sessionId = config.sessionId || "cli-session";
     this.tools = new Map();
+    this.assistantName = config.assistantName || "Assistant";
+    this.toolOutputPrefix = config.toolOutputPrefix || "Tool";
 
     if (config.tools) {
       for (const tool of config.tools) {
@@ -58,55 +67,157 @@ class BedrockCLI {
     }
   }
 
+  private wrapText(text: string, indent: number = 0): string {
+    const words = text.split(/(\s+)/);
+    const lines: string[] = [];
+    let currentLine = " ".repeat(indent);
+    const maxWidth = this.MAX_WIDTH - indent;
+
+    for (const word of words) {
+      if (currentLine.length + word.length > maxWidth) {
+        if (currentLine.trim()) {
+          lines.push(currentLine);
+        }
+        currentLine = " ".repeat(indent) + word;
+      } else {
+        currentLine += word;
+      }
+    }
+
+    if (currentLine.trim()) {
+      lines.push(currentLine);
+    }
+
+    return lines.join("\n");
+  }
+
+  private displayTimestampedMessage(
+    prefix: string,
+    message: string,
+    color: ChalkFunction
+  ) {
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(color(`${prefix} `) + chalk.gray(`[${timestamp}]`));
+    console.log(color(this.wrapText(message)) + "\n");
+  }
+
   private displayWelcomeMessage() {
-    console.log(chalk.cyan.bold("\n🤖 Welcome to LLMCLI!\n"));
+    const title = "Welcome to AI Chat";
+    const horizontalLine = "─".repeat(this.MAX_WIDTH);
+
+    console.log(chalk.cyan("\n" + horizontalLine));
     console.log(
-      chalk.gray(
-        `• Type ${chalk.white.bold("exit")} or ${chalk.white.bold(
-          "quit"
-        )} to end the session`
-      )
+      chalk.cyan(title.padStart(this.MAX_WIDTH / 2 + title.length / 2))
     );
-    console.log(
-      chalk.gray(`• Type ${chalk.white.bold("tools")} to see available tools\n`)
+    console.log(chalk.cyan(horizontalLine + "\n"));
+
+    console.log(chalk.gray("Available commands:"));
+    console.log(chalk.gray("  /exit, /quit    Exit session"));
+    console.log(chalk.gray("  /tools          List available tools"));
+    console.log(chalk.gray("  /clear          Clear terminal"));
+    console.log();
+
+    this.displayTimestampedMessage(
+      this.assistantName,
+      "Hello! I'm your AI assistant. How can I help you today?",
+      chalk.cyan
     );
+  }
+
+  private displayToolsList() {
+    console.log(chalk.yellow.bold("\n🔧 Available Tools:"));
+    for (const [name, tool] of this.tools.entries()) {
+      const spec = tool.spec().toolSpec;
+      console.log(chalk.yellow(`\n${name}:`));
+      console.log(chalk.gray(this.wrapText(spec.description, 2)));
+      console.log(chalk.gray("  Input Schema:"));
+      console.log(
+        chalk.gray(
+          "  " +
+            JSON.stringify(spec.inputSchema.json, null, 2).replace(
+              /\n/g,
+              "\n  "
+            )
+        )
+      );
+    }
+    console.log();
+  }
+
+  private displayPrompt() {
+    if (this.rl) {
+      process.stdout.write(chalk.blue("› "));
+    }
   }
 
   private createReadlineInterface(): readline.Interface {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
-      prompt: chalk.bold.blue("You: "),
+      prompt: chalk.blue("› "), // Set the actual prompt here
       terminal: true,
     });
 
-    // Ensure proper handling of Ctrl+C
     rl.on("SIGINT", () => {
-      console.log("\nExiting...");
-      rl.close();
-      process.exit(0);
+      if (this.rl) {
+        this.rl.close();
+      }
     });
+
+    // Initial prompt display
+    rl.prompt();
 
     return rl;
   }
 
-  private async performCleanup(forceKill: boolean = false): Promise<void> {
+  private async handleCommands(input: string): Promise<boolean> {
+    const command = input.toLowerCase().trim();
+
+    switch (command) {
+      case "/exit":
+      case "/quit":
+        await this.cleanup();
+        process.exit(0); // This will trigger the main program's cleanup
+        return true;
+
+      case "/tools":
+        this.displayToolsList();
+        return true;
+
+      case "/clear":
+        console.clear();
+        this.displayWelcomeMessage();
+        return true;
+
+      default:
+        return false;
+    }
+  }
+
+  public async cleanup(): Promise<void> {
     if (this.cleanupPromise) {
       return this.cleanupPromise;
     }
 
     this.cleanupPromise = (async () => {
-      if (!this.goodbyeShown) {
-        console.log(chalk.yellow("\nCleaning up background processes..."));
-        await processManager.cleanup(5000, forceKill);
+      console.log(chalk.yellow("\nCleaning up background processes..."));
+      try {
+        // Force kill with true and increased timeout
+        await processManager.cleanup(8000, true);
         this.isRunning = false;
+
         if (this.rl) {
-          this.rl.removeAllListeners("close");
+          this.rl.removeAllListeners();
           this.rl.close();
           this.rl = null;
         }
-        console.log(chalk.yellow("\nGoodbye! 👋"));
-        this.goodbyeShown = true;
+
+        console.log(
+          chalk.cyan("\n👋 Thanks for chatting! See you next time!\n")
+        );
+      } catch (error) {
+        console.error(chalk.red("Error during cleanup:"), error);
+        throw error; // Propagate the error to be handled by the main program
       }
     })();
 
@@ -118,23 +229,17 @@ class BedrockCLI {
       throw new Error("CLI is already running");
     }
     this.isRunning = true;
-    this.goodbyeShown = false;
 
     return new Promise((resolve) => {
-      console.log(chalk.gray("Initializing conversation..."));
-
-      const cleanup = async (forceKill: boolean = false) => {
-        await this.performCleanup(forceKill);
-        resolve();
-      };
-
-      // Initialize conversation
       this.agent
         .createConversation(this.sessionId, {
           systemPrompt: this.systemPrompt,
           onMessage: (chunk) => {
             if (this.isFirstChunk) {
-              process.stdout.write(chalk.green.bold("\nAssistant: "));
+              const timestamp = new Date().toLocaleTimeString();
+              process.stdout.write(
+                chalk.cyan(`${this.assistantName} [${timestamp}]\n`)
+              );
               this.isFirstChunk = false;
             }
             process.stdout.write(chalk.green(chunk));
@@ -143,73 +248,55 @@ class BedrockCLI {
             this.isFirstChunk = true;
             process.stdout.write("\n\n");
             if (this.isRunning && this.rl) {
-              this.rl.prompt();
+              this.rl.prompt(); // Use readline's prompt
             }
           },
           onError: (error) => {
             console.error(chalk.red("\n❌ Error:"), error);
-            this.isFirstChunk = true;
             if (this.isRunning && this.rl) {
-              this.rl.prompt();
+              this.rl.prompt(); // Use readline's prompt
             }
           },
         })
         .then(() => {
-          // Initialize readline after conversation is ready
           this.rl = this.createReadlineInterface();
 
-          // Handle input
           this.rl.on("line", async (line) => {
             const trimmedLine = line.trim();
+            console.log(); // Add a newline after the user's input
 
             if (!trimmedLine) {
               this.rl?.prompt();
               return;
             }
 
-            if (
-              trimmedLine.toLowerCase() === "exit" ||
-              trimmedLine.toLowerCase() === "quit"
-            ) {
-              await cleanup(true);
-              return;
-            }
-
-            if (trimmedLine.toLowerCase() === "tools") {
-              console.log(chalk.yellow.bold("\n🔧 Available Tools:"));
-              for (const [name, tool] of this.tools.entries()) {
-                const spec = tool.spec().toolSpec;
-                console.log(chalk.yellow(`\n${name}:`));
-                console.log(chalk.gray(`  Description: ${spec.description}`));
-                console.log(chalk.gray("  Input Schema:"));
-                console.log(
-                  chalk.gray(JSON.stringify(spec.inputSchema.json, null, 2))
-                );
+            if (await this.handleCommands(trimmedLine)) {
+              if (this.isRunning && this.rl) {
+                this.rl.prompt();
               }
-              console.log("");
-              this.rl?.prompt();
               return;
             }
 
-            console.log(chalk.gray("\nSending message..."));
+            // Display timestamped message for user input
+            const timestamp = new Date().toLocaleTimeString();
+            console.log(chalk.blue(`You [${timestamp}]`));
+            console.log(chalk.white(this.wrapText(trimmedLine)) + "\n");
+
             try {
               await this.agent.sendMessage(this.sessionId, trimmedLine);
             } catch (error) {
-              console.error(chalk.red("\nFailed to send message"));
-              console.error(chalk.red("Error details:"), error);
+              console.error(chalk.red("\nFailed to send message:"), error);
               this.rl?.prompt();
             }
           });
 
-          this.rl.on("close", async () => {
-            await cleanup();
-          });
           this.displayWelcomeMessage();
           this.rl.prompt();
         })
         .catch(async (error) => {
-          console.error("Failed to initialize conversation:", error);
-          await cleanup();
+          console.error(chalk.red("Failed to initialize conversation:"), error);
+          await this.cleanup();
+          resolve();
         });
     });
   }
