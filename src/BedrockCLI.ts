@@ -4,6 +4,7 @@ import { BedrockAgent, Tool } from "./BedrockAgent.js";
 import { SystemContentBlock } from "@aws-sdk/client-bedrock-runtime";
 import { AwsCredentials } from "./ConfigManager";
 import { processManager } from "./BackgroundProcessManager.js";
+import path from "path";
 
 // Add type for ChalkFunction
 type ChalkFunction = typeof chalk.red;
@@ -64,6 +65,19 @@ class BedrockCLI {
         const toolSpec = tool.spec();
         this.tools.set(toolSpec.toolSpec.name, tool);
       }
+    }
+  }
+
+  private getCurrentDirectoryName(): string {
+    const currentPath = process.cwd();
+    return path.basename(currentPath);
+  }
+
+  private updatePrompt() {
+    if (this.rl) {
+      const currentDir = this.getCurrentDirectoryName();
+      this.rl.setPrompt(chalk.blue(`${currentDir}> `));
+      this.rl.prompt(true);
     }
   }
 
@@ -145,11 +159,13 @@ class BedrockCLI {
   }
 
   private createReadlineInterface(): readline.Interface {
+    const currentDir = this.getCurrentDirectoryName();
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
-      prompt: chalk.blue("› "),
+      prompt: chalk.blue(`${currentDir}> `),
       terminal: true,
+      historySize: 1000,
     });
 
     rl.on("SIGINT", () => {
@@ -161,6 +177,29 @@ class BedrockCLI {
     return rl;
   }
 
+  private async handleToolResult(result: any) {
+    if (
+      result.name === "executeCommand" ||
+      result.name === "executeBackgroundCommand"
+    ) {
+      if (result.status === "success") {
+        process.stdout.write(
+          chalk.cyan(`\nCommand: ${result.result.command}\n`)
+        );
+        const toolOutput = result.result;
+        const toolOutputString = JSON.stringify(toolOutput.output, null, 2);
+
+        process.stdout.write(
+          chalk.yellowBright(`Result: ${toolOutputString}\n`)
+        );
+
+        this.updatePrompt();
+      } else {
+        process.stdout.write(chalk.red(`\nError: ${result.result}\n`));
+      }
+    }
+  }
+
   private async handleCommands(input: string): Promise<boolean> {
     const command = input.toLowerCase().trim();
 
@@ -168,7 +207,7 @@ class BedrockCLI {
       case "/exit":
       case "/quit":
         await this.cleanup();
-        process.exit(0); // This will trigger the main program's cleanup
+        process.exit(0);
         return true;
 
       case "/tools":
@@ -182,6 +221,39 @@ class BedrockCLI {
 
       default:
         return false;
+    }
+  }
+
+  private async handleUserInput(line: string): Promise<void> {
+    const trimmedLine = line.trim();
+
+    // Clear the previous line
+    process.stdout.moveCursor(0, -1);
+    process.stdout.clearLine(1);
+    console.log(); // Add a newline
+
+    if (!trimmedLine) {
+      this.rl?.prompt();
+      return;
+    }
+
+    if (await this.handleCommands(trimmedLine)) {
+      if (this.isRunning && this.rl) {
+        this.rl.prompt();
+      }
+      return;
+    }
+
+    // Display timestamped message for user input
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(chalk.blue(`You [${timestamp}]`));
+    console.log(chalk.white(this.wrapText(trimmedLine)) + "\n");
+
+    try {
+      await this.agent.sendMessage(this.sessionId, trimmedLine);
+    } catch (error) {
+      console.error(chalk.red("\nFailed to send message:"), error);
+      this.rl?.prompt();
     }
   }
 
@@ -239,13 +311,14 @@ class BedrockCLI {
             this.isFirstChunk = true;
             process.stdout.write("\n\n");
             if (this.isRunning && this.rl) {
-              this.rl.prompt(); // Use readline's prompt
+              this.rl.prompt();
             }
           },
+          onToolResult: (result) => this.handleToolResult(result),
           onError: (error) => {
             console.error(chalk.red("\n❌ Error:"), error);
             if (this.isRunning && this.rl) {
-              this.rl.prompt(); // Use readline's prompt
+              this.rl.prompt();
             }
           },
         })
@@ -253,32 +326,7 @@ class BedrockCLI {
           this.rl = this.createReadlineInterface();
 
           this.rl.on("line", async (line) => {
-            const trimmedLine = line.trim();
-            console.log(); // Add a newline after the user's input
-
-            if (!trimmedLine) {
-              this.rl?.prompt();
-              return;
-            }
-
-            if (await this.handleCommands(trimmedLine)) {
-              if (this.isRunning && this.rl) {
-                this.rl.prompt();
-              }
-              return;
-            }
-
-            // Display timestamped message for user input
-            const timestamp = new Date().toLocaleTimeString();
-            console.log(chalk.blue(`You [${timestamp}]`));
-            console.log(chalk.white(this.wrapText(trimmedLine)) + "\n");
-
-            try {
-              await this.agent.sendMessage(this.sessionId, trimmedLine);
-            } catch (error) {
-              console.error(chalk.red("\nFailed to send message:"), error);
-              this.rl?.prompt();
-            }
+            await this.handleUserInput(line);
           });
 
           this.displayWelcomeMessage();

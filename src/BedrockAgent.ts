@@ -2,7 +2,10 @@ import {
   BedrockRuntimeClient,
   SystemContentBlock,
 } from "@aws-sdk/client-bedrock-runtime";
-import { BedrockConversationManager } from "./BedrockConversationManager.js";
+import {
+  BedrockConversationManager,
+  ToolResult,
+} from "./BedrockConversationManager.js";
 import { AwsCredentials } from "./ConfigManager";
 
 export interface StateManager {
@@ -44,6 +47,7 @@ interface ConversationOptions {
   onMessage?: (message: string) => void;
   onComplete?: () => void;
   onError?: (error: Error) => void;
+  onToolResult?: (result: ToolResult) => void;
 }
 
 export class BedrockAgent {
@@ -104,6 +108,13 @@ export class BedrockAgent {
         handlers.onError(error);
       }
       this.activeConversations.delete(sessionId);
+    });
+
+    this.manager.on("toolResult", (result) => {
+      const handlers = this.conversationHandlers.get(result.sessionId);
+      if (handlers?.onToolResult) {
+        handlers.onToolResult(result);
+      }
     });
   }
 

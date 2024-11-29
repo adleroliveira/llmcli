@@ -65,6 +65,14 @@ interface StateManager {
   load(sessionId: string): Promise<ConversationState | null>;
 }
 
+export interface ToolResult {
+  sessionId: string;
+  toolUseId: string;
+  name: string;
+  result: any;
+  status: "success" | "error";
+}
+
 export class BedrockConversationManager extends EventEmitter {
   private client: BedrockRuntimeClient;
   private config: ConversationConfig;
@@ -136,6 +144,14 @@ export class BedrockConversationManager extends EventEmitter {
           status: "success",
         },
       };
+
+      this.emit("toolResult", {
+        sessionId,
+        toolUseId,
+        name,
+        result: toolResult,
+        status: "success",
+      });
     } catch (error) {
       toolContent = {
         toolResult: {
@@ -146,6 +162,14 @@ export class BedrockConversationManager extends EventEmitter {
           status: "error",
         },
       };
+
+      this.emit("toolResult", {
+        sessionId,
+        toolUseId,
+        name,
+        result: error instanceof Error ? error.message : "Unknown error",
+        status: "error",
+      });
     }
 
     this.pendingToolUse = null;
