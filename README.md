@@ -1,4 +1,4 @@
-# LLMCLI - AWS Bedrock AI Assistant
+# LLMCLI - LLM Based CLI Assistant
 
 ## Description
 

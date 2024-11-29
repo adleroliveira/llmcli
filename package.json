@@ -1,6 +1,6 @@
 {
   "name": "llmcli",
-  "version": "0.0.1",
+  "version": "0.1.1",
   "description": "The LLMCLI is a command-line tool that allows you to interact with the Bedrock AI model. It provides various tools and capabilities to help you accomplish any cli tasks",
   "main": "dist/index.js",
   "bin": {

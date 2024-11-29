@@ -52,7 +52,7 @@ class BedrockCLI {
     });
 
     this.systemPrompt = config.systemPrompt || [
-      { text: "You are a helpful assistant." },
+      { text: "You are a helpful CLI assistant." },
     ];
     this.sessionId = config.sessionId || "cli-session";
     this.tools = new Map();
@@ -102,7 +102,7 @@ class BedrockCLI {
   }
 
   private displayWelcomeMessage() {
-    const title = "Welcome to AI Chat";
+    const title = "Welcome to LLMCLI, the AI CLI Assistant";
     const horizontalLine = "─".repeat(this.MAX_WIDTH);
 
     console.log(chalk.cyan("\n" + horizontalLine));
@@ -144,17 +144,11 @@ class BedrockCLI {
     console.log();
   }
 
-  private displayPrompt() {
-    if (this.rl) {
-      process.stdout.write(chalk.blue("› "));
-    }
-  }
-
   private createReadlineInterface(): readline.Interface {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
-      prompt: chalk.blue("› "), // Set the actual prompt here
+      prompt: chalk.blue("› "),
       terminal: true,
     });
 
@@ -163,9 +157,6 @@ class BedrockCLI {
         this.rl.close();
       }
     });
-
-    // Initial prompt display
-    rl.prompt();
 
     return rl;
   }
