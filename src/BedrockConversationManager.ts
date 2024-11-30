@@ -207,6 +207,7 @@ export class BedrockConversationManager extends EventEmitter {
       contentBlockStart: (value: ContentBlockStartEvent) => {
         const toolUse = value.start?.toolUse;
         if (toolUse?.toolUseId && toolUse?.name) {
+          this.emit("toolUse", { sessionId, name: toolUse?.name });
           this.pendingToolUse = {
             sessionId,
             toolUseId: toolUse.toolUseId,

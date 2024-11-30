@@ -48,6 +48,7 @@ interface ConversationOptions {
   onComplete?: () => void;
   onError?: (error: Error) => void;
   onToolResult?: (result: ToolResult) => void;
+  onToolUse?: (name: string) => void;
 }
 
 export class BedrockAgent {
@@ -114,6 +115,13 @@ export class BedrockAgent {
       const handlers = this.conversationHandlers.get(result.sessionId);
       if (handlers?.onToolResult) {
         handlers.onToolResult(result);
+      }
+    });
+
+    this.manager.on("toolUse", ({ sessionId, name }) => {
+      const handlers = this.conversationHandlers.get(sessionId);
+      if (handlers?.onToolUse) {
+        handlers.onToolUse(name);
       }
     });
   }

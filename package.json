@@ -11,8 +11,7 @@
     "build": "tsc",
     "dev": "node --loader ts-node/esm src/index.ts",
     "watch": "tsc -w",
-    "start": "node dist/index.js",
-    "prepare": "npm run build"
+    "start": "node dist/index.js"
   },
   "keywords": [
     "CLI",
@@ -36,7 +35,6 @@
     "@aws-sdk/client-sts": "^3.699.0",
     "@aws-sdk/credential-providers": "^3.699.0",
     "@smithy/shared-ini-file-loader": "^3.1.11",
-    "axios": "^1.7.8",
     "chalk": "^5.3.0",
     "commander": "^12.1.0",
     "inquirer": "^12.1.0",

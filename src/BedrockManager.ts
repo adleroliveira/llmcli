@@ -156,7 +156,8 @@ export class BedrockManager {
       {
         type: "list",
         name: "modelId",
-        message: "Which model would you like to use?",
+        message:
+          "Which model would you like to use? (Recommended: Anthropic Haiku 3.5)",
         choices: availableModels.map((id) => ({
           name: this.formatModelName(id),
           value: id,

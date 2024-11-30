@@ -400,8 +400,9 @@ class ConfigManager {
       {
         type: "input",
         name: "region",
-        message: "Which AWS region would you like to use?",
-        default: "us-east-1",
+        message:
+          "Which AWS region would you like to use? (Recommended: us-west-2)",
+        default: "us-west-2",
       },
     ]);
 

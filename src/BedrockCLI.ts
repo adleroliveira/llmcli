@@ -33,9 +33,12 @@ class BedrockCLI {
   private tools: Map<string, Tool>;
   private isRunning: boolean = false;
   private cleanupPromise: Promise<void> | null = null;
+  private spinnerInterval: NodeJS.Timeout | null = null;
+  private spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  private currentFrame = 0;
   private readonly assistantName: string;
-  private readonly toolOutputPrefix: string;
   private readonly MAX_WIDTH = 100;
+  private isThinking: boolean = false;
 
   constructor(config: BedrockCLIConfig) {
     this.agent = new BedrockAgent({
@@ -58,12 +61,45 @@ class BedrockCLI {
     this.sessionId = config.sessionId || "cli-session";
     this.tools = new Map();
     this.assistantName = config.assistantName || "Assistant";
-    this.toolOutputPrefix = config.toolOutputPrefix || "Tool";
 
     if (config.tools) {
       for (const tool of config.tools) {
         const toolSpec = tool.spec();
         this.tools.set(toolSpec.toolSpec.name, tool);
+      }
+    }
+  }
+
+  private startSpinner(message: string = "Thinking") {
+    if (this.spinnerInterval) return;
+
+    this.isThinking = true;
+    if (this.rl) {
+      this.rl.pause(); // Pause readline to prevent input
+    }
+
+    process.stdout.write("\n"); // New line before spinner
+    this.spinnerInterval = setInterval(() => {
+      process.stdout.clearLine(0);
+      process.stdout.cursorTo(0);
+      process.stdout.write(
+        chalk.cyan(`${this.spinnerFrames[this.currentFrame]} ${message}...`)
+      );
+      this.currentFrame = (this.currentFrame + 1) % this.spinnerFrames.length;
+    }, 80);
+  }
+
+  private stopSpinner() {
+    if (this.spinnerInterval) {
+      clearInterval(this.spinnerInterval);
+      this.spinnerInterval = null;
+      this.currentFrame = 0;
+      process.stdout.clearLine(0);
+      process.stdout.cursorTo(0);
+
+      this.isThinking = false;
+      if (this.rl) {
+        this.rl.resume(); // Resume readline when thinking is done
       }
     }
   }
@@ -182,6 +218,7 @@ class BedrockCLI {
       result.name === "executeCommand" ||
       result.name === "executeBackgroundCommand"
     ) {
+      this.stopSpinner();
       if (result.status === "success") {
         process.stdout.write(
           chalk.cyan(`\nCommand: ${result.result.command}\n`)
@@ -225,6 +262,11 @@ class BedrockCLI {
   }
 
   private async handleUserInput(line: string): Promise<void> {
+    if (this.isThinking) {
+      // Ignore input while thinking
+      return;
+    }
+
     const trimmedLine = line.trim();
 
     // Clear the previous line
@@ -250,8 +292,10 @@ class BedrockCLI {
     console.log(chalk.white(this.wrapText(trimmedLine)) + "\n");
 
     try {
+      this.startSpinner();
       await this.agent.sendMessage(this.sessionId, trimmedLine);
     } catch (error) {
+      this.stopSpinner();
       console.error(chalk.red("\nFailed to send message:"), error);
       this.rl?.prompt();
     }
@@ -299,6 +343,7 @@ class BedrockCLI {
           systemPrompt: this.systemPrompt,
           onMessage: (chunk) => {
             if (this.isFirstChunk) {
+              this.stopSpinner();
               const timestamp = new Date().toLocaleTimeString();
               process.stdout.write(
                 chalk.cyan(`${this.assistantName} [${timestamp}]\n`)
@@ -308,6 +353,7 @@ class BedrockCLI {
             process.stdout.write(chalk.green(chunk));
           },
           onComplete: () => {
+            this.stopSpinner();
             this.isFirstChunk = true;
             process.stdout.write("\n\n");
             if (this.isRunning && this.rl) {
@@ -315,7 +361,12 @@ class BedrockCLI {
             }
           },
           onToolResult: (result) => this.handleToolResult(result),
+          onToolUse: (result) => {
+            console.log("Tool will be used", result);
+            this.startSpinner();
+          },
           onError: (error) => {
+            this.stopSpinner();
             console.error(chalk.red("\n❌ Error:"), error);
             if (this.isRunning && this.rl) {
               this.rl.prompt();
