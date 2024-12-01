@@ -35,6 +35,9 @@ importers:
       js-yaml:
         specifier: ^4.1.0
         version: 4.1.0
+      node-pty:
+        specifier: ^1.0.0
+        version: 1.0.0
       ora:
         specifier: ^8.1.1
         version: 8.1.1
@@ -789,6 +792,12 @@ packages:
   mute-stream@2.0.0:
     resolution: {integrity: sha512-WWdIxpyjEn+FhQJQQv9aQAYlHoNVdzIzUySNV1gHUPDSdZJ3yZn7pAAbQcV7B56Mvu881q9FZV+0Vx2xC44VWA==}
     engines: {node: ^18.17.0 || >=20.5.0}
+
+  nan@2.22.0:
+    resolution: {integrity: sha512-nbajikzWTMwsW+eSsNm3QwlOs7het9gGJU5dDZzRTQGk03vyBOauxgI4VakDzE0PtsGTmXPsXTbbjVhRwR5mpw==}
+
+  node-pty@1.0.0:
+    resolution: {integrity: sha512-wtBMWWS7dFZm/VgqElrTvtfMq4GzJ6+edFI0Y0zyzygUSZMgZdraDUMUhCIvkjhJjme15qWmbyJbtAx4ot4uZA==}
 
   onetime@7.0.0:
     resolution: {integrity: sha512-VXJjc87FScF88uafS3JllDgvAm+c/Slfz06lorj2uAY34rlUu0Nt+v8wreiImcrgAjjIHp1rXpTDlLOGw29WwQ==}
@@ -2074,6 +2083,12 @@ snapshots:
   mimic-function@5.0.1: {}
 
   mute-stream@2.0.0: {}
+
+  nan@2.22.0: {}
+
+  node-pty@1.0.0:
+    dependencies:
+      nan: 2.22.0
 
   onetime@7.0.0:
     dependencies:
