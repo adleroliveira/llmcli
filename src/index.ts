@@ -227,7 +227,7 @@ program
 
         const config = configManager.getConfig();
 
-        const cli = new BedrockCLI({
+        const cli = await BedrockCLI.create({
           modelId: config.bedrock!.modelId,
           region: config.awsRegion,
           systemPrompt: [
