@@ -78,7 +78,7 @@ class BedrockCLI {
         // Add environment variable to silence bash deprecation warning
         const env = {
             ...process.env,
-            BASH_SILENCE_DEPRECATION_WARNING: "1"
+            BASH_SILENCE_DEPRECATION_WARNING: "1",
         };
         this.ptyProcess = pty.spawn(shell, [], {
             name: "xterm-color",
@@ -100,32 +100,38 @@ class BedrockCLI {
         if (this.aiMode && this.isProcessing) {
             return;
         }
+        // Write the original PTY output first
         process.stdout.write(data);
-        if (data.includes("$") || data.includes(">") || data.includes("%")) {
-            const lines = data.split("\n");
-            const lastLine = lines[lines.length - 1];
-            if (lastLine.includes("$") ||
-                lastLine.includes(">") ||
-                lastLine.includes("%")) {
-                this.lastPrompt = lastLine;
-                this.inputInterceptor.setCurrentPrompt(this.lastPrompt);
-                if (!this.lastPrompt.includes("[🤖]") &&
-                    !this.lastPrompt.includes("[⚡]")) {
-                    const indicator = this.aiMode
-                        ? chalk.cyan("[🤖]")
-                        : chalk.yellow("[⚡]");
-                    process.stdout.write(`${indicator} `);
-                }
+        // Check for common prompt characters and line endings
+        const promptRegex = /(?:[%$>#]|(?:➜|❯).*?)[ ]*$/;
+        const lines = data.split("\n");
+        const lastLine = lines[lines.length - 1];
+        if (promptRegex.test(lastLine)) {
+            this.lastPrompt = lastLine;
+            this.inputInterceptor.setCurrentPrompt(this.lastPrompt);
+            // If the prompt doesn't already have our indicators, add them
+            if (!lastLine.includes("[🤖]") && !lastLine.includes("[⚡]")) {
+                // Small delay to ensure the prompt is fully rendered
+                setTimeout(() => {
+                    this.updatePrompt();
+                }, 10);
             }
+        }
+    }
+    updatePrompt(forceUpdate = false) {
+        if ((this.lastPrompt && !this.isProcessing) || forceUpdate) {
+            const indicator = this.aiMode ? chalk.cyan("[🤖]") : chalk.yellow("[⚡]");
+            const cleanPrompt = this.lastPrompt.replace(/\[⚡\]|\[🤖\]/g, "").trim();
+            process.stdout.write("\r\x1b[K" + cleanPrompt + " " + indicator + " ");
         }
     }
     enterAiMode() {
         this.aiMode = true;
-        process.stdout.write(this.getPromptWithIndicator());
+        this.updatePrompt(true);
     }
     exitAiMode() {
         this.aiMode = false;
-        process.stdout.write(this.getPromptWithIndicator());
+        this.updatePrompt(true);
     }
     wrapText(text, indent = 0) {
         const words = text.split(/(\s+)/);

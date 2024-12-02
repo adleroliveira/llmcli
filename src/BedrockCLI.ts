@@ -107,29 +107,26 @@ class BedrockCLI {
 
   private initializePty() {
     // Determine the appropriate shell
-    const shell = process.platform === "win32" 
-      ? "powershell.exe" 
-      : process.platform === "darwin"
+    const shell =
+      process.platform === "win32"
+        ? "powershell.exe"
+        : process.platform === "darwin"
         ? "/bin/zsh"
         : process.env.SHELL || "bash";
 
     // Add environment variable to silence bash deprecation warning
     const env = {
       ...process.env,
-      BASH_SILENCE_DEPRECATION_WARNING: "1"
+      BASH_SILENCE_DEPRECATION_WARNING: "1",
     };
 
-    this.ptyProcess = pty.spawn(
-      shell,
-      [],
-      {
-        name: "xterm-color",
-        cols: process.stdout.columns,
-        rows: process.stdout.rows,
-        cwd: process.cwd(),
-        env: env,
-      }
-    );
+    this.ptyProcess = pty.spawn(shell, [], {
+      name: "xterm-color",
+      cols: process.stdout.columns,
+      rows: process.stdout.rows,
+      cwd: process.cwd(),
+      env: env,
+    });
 
     this.inputInterceptor = new InputInterceptor(this);
     process.stdin.setRawMode(true);
@@ -147,40 +144,44 @@ class BedrockCLI {
       return;
     }
 
+    // Write the original PTY output first
     process.stdout.write(data);
 
-    if (data.includes("$") || data.includes(">") || data.includes("%")) {
-      const lines = data.split("\n");
-      const lastLine = lines[lines.length - 1];
-      if (
-        lastLine.includes("$") ||
-        lastLine.includes(">") ||
-        lastLine.includes("%")
-      ) {
-        this.lastPrompt = lastLine;
-        this.inputInterceptor.setCurrentPrompt(this.lastPrompt);
+    // Check for common prompt characters and line endings
+    const promptRegex = /(?:[%$>#]|(?:➜|❯).*?)[ ]*$/;
+    const lines = data.split("\n");
+    const lastLine = lines[lines.length - 1];
 
-        if (
-          !this.lastPrompt.includes("[🤖]") &&
-          !this.lastPrompt.includes("[⚡]")
-        ) {
-          const indicator = this.aiMode
-            ? chalk.cyan("[🤖]")
-            : chalk.yellow("[⚡]");
-          process.stdout.write(`${indicator} `);
-        }
+    if (promptRegex.test(lastLine)) {
+      this.lastPrompt = lastLine;
+      this.inputInterceptor.setCurrentPrompt(this.lastPrompt);
+
+      // If the prompt doesn't already have our indicators, add them
+      if (!lastLine.includes("[🤖]") && !lastLine.includes("[⚡]")) {
+        // Small delay to ensure the prompt is fully rendered
+        setTimeout(() => {
+          this.updatePrompt();
+        }, 10);
       }
+    }
+  }
+
+  public updatePrompt(forceUpdate: boolean = false) {
+    if ((this.lastPrompt && !this.isProcessing) || forceUpdate) {
+      const indicator = this.aiMode ? chalk.cyan("[🤖]") : chalk.yellow("[⚡]");
+      const cleanPrompt = this.lastPrompt.replace(/\[⚡\]|\[🤖\]/g, "").trim();
+      process.stdout.write("\r\x1b[K" + cleanPrompt + " " + indicator + " ");
     }
   }
 
   public enterAiMode() {
     this.aiMode = true;
-    process.stdout.write(this.getPromptWithIndicator());
+    this.updatePrompt(true);
   }
 
   public exitAiMode() {
     this.aiMode = false;
-    process.stdout.write(this.getPromptWithIndicator());
+    this.updatePrompt(true);
   }
 
   private wrapText(text: string, indent: number = 0): string {

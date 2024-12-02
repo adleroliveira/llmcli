@@ -52,8 +52,15 @@ export class InputInterceptor extends Transform {
     }
     toggleAiMode() {
         this.aiMode = !this.aiMode;
-        process.stdout.write("\r\x1b[K");
-        this.aiMode ? this.cli.enterAiMode() : this.cli.exitAiMode();
+        process.stdout.write("\r\x1b[K"); // Clear the current line
+        if (this.aiMode) {
+            this.cli.enterAiMode();
+        }
+        else {
+            this.cli.exitAiMode();
+        }
+        // Force prompt update after mode switch
+        this.cli.updatePrompt(true);
     }
     setCurrentPrompt(prompt) {
         this.currentPrompt = prompt.replace(/\[⚡\]|\[🤖\]/g, "").trim();
