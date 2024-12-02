@@ -202,7 +202,7 @@ program
                     createBackgroundCommandTool(),
                     createSystemInfoTool(),
                 ],
-                credentials: configManager.getCredentials(),
+                credentials: await configManager.getCredentials(),
                 assistantName: "Sage",
             });
             currentCLI = cli;

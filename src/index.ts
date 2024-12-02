@@ -105,13 +105,16 @@ program
     `)
   );
 
-async function validateCredentialsAndAccess(skipValidation: boolean = false): Promise<boolean> {
-
+async function validateCredentialsAndAccess(
+  skipValidation: boolean = false
+): Promise<boolean> {
   if (skipValidation) {
-    console.log(chalk.yellow(
-      "\n⚠️  Warning: Skipping AWS credentials and Bedrock access validation." +
-      "\n   This may lead to runtime errors if credentials are invalid or Bedrock access is not properly configured."
-    ));
+    console.log(
+      chalk.yellow(
+        "\n⚠️  Warning: Skipping AWS credentials and Bedrock access validation." +
+          "\n   This may lead to runtime errors if credentials are invalid or Bedrock access is not properly configured."
+      )
+    );
     return true;
   }
 
@@ -205,7 +208,10 @@ async function validateCredentialsAndAccess(skipValidation: boolean = false): Pr
 program
   .command("start", { isDefault: true })
   .description("Start the CLI interface")
-  .option("-s, --skip-validation", "Skip AWS credentials and Bedrock access validation")
+  .option(
+    "-s, --skip-validation",
+    "Skip AWS credentials and Bedrock access validation"
+  )
   .action(async (options) => {
     try {
       // Your existing default action code here
@@ -224,7 +230,9 @@ program
         spinner.succeed("Configuration found");
       }
 
-      const credentialsValid = await validateCredentialsAndAccess(options.skipValidation);
+      const credentialsValid = await validateCredentialsAndAccess(
+        options.skipValidation
+      );
 
       if (credentialsValid) {
         console.log(
@@ -267,7 +275,7 @@ program
             createBackgroundCommandTool(),
             createSystemInfoTool(),
           ],
-          credentials: configManager.getCredentials()!,
+          credentials: await configManager.getCredentials(),
           assistantName: "Sage",
         });
 

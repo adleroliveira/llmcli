@@ -217,9 +217,9 @@ class ConfigManager {
       try {
         const storedCreds = JSON.parse(readFileSync(CREDENTIALS_FILE, "utf8"));
         if (
-          storedCreds.accessKeyId && 
+          storedCreds.accessKeyId &&
           storedCreds.secretAccessKey &&
-          await this.validateCredentials(storedCreds)  // Add validation here
+          (await this.validateCredentials(storedCreds)) // Add validation here
         ) {
           availableMethods.push("stored");
         }
@@ -428,7 +428,14 @@ class ConfigManager {
     console.log(`Configuration saved to: ${CONFIG_FILE}`);
   }
 
-  getCredentials(): AwsCredentials | undefined {
+  async getCredentials(): Promise<AwsCredentials> {
+    // Ensure credentials are loaded before returning them
+    await this.loadCredentials();
+
+    if (!this.runtimeCredentials) {
+      throw new Error("No valid AWS credentials found");
+    }
+
     return this.runtimeCredentials;
   }
 
@@ -437,6 +444,7 @@ class ConfigManager {
   }
 
   async loadCredentials(): Promise<void> {
+    // First check if current runtime credentials are valid
     if (
       this.runtimeCredentials?.accessKeyId &&
       this.runtimeCredentials?.secretAccessKey
@@ -445,18 +453,31 @@ class ConfigManager {
       if (isValid) return;
     }
 
-    // Changed order to prioritize stored credentials
-    const methods: Array<"stored" | "environment" | "profile"> = [
-      "stored",
-      "profile",
-      "environment"
-    ];
-
-    for (const method of methods) {
-      const credentials = await this.loadAndValidateCredentials(method);
+    // If we have a configured auth method, try that first
+    if (this.config.authMethod) {
+      const credentials = await this.loadAndValidateCredentials(
+        this.config.authMethod
+      );
       if (credentials) {
         this.runtimeCredentials = credentials;
         return;
+      }
+    }
+
+    // Only try other methods if no auth method is configured
+    if (!this.config.authMethod) {
+      const methods: Array<"stored" | "environment" | "profile"> = [
+        "stored",
+        "profile",
+        "environment",
+      ];
+
+      for (const method of methods) {
+        const credentials = await this.loadAndValidateCredentials(method);
+        if (credentials) {
+          this.runtimeCredentials = credentials;
+          return;
+        }
       }
     }
   }
@@ -479,16 +500,18 @@ class ConfigManager {
       const config = this.getConfig();
       return !!(
         // Check for any of the valid auth methods
-        (config.awsProfile || 
-         process.env.AWS_ACCESS_KEY_ID || 
-         config.authMethod === "stored") &&
-        // Still require region
-        !!config.awsRegion
+        (
+          (config.awsProfile ||
+            process.env.AWS_ACCESS_KEY_ID ||
+            config.authMethod === "stored") &&
+          // Still require region
+          !!config.awsRegion
+        )
       );
     } catch {
       return false;
     }
-}
+  }
 
   async cleanup(options: { force?: boolean } = {}): Promise<void> {
     if (!options.force) {
