@@ -166,7 +166,7 @@ program
         if (credentialsValid) {
             console.log(chalk.gray(`\nTip: You can update your configuration anytime using ${chalk.bold(`${program.name()} configure`)}`));
             const config = configManager.getConfig();
-            const cli = new BedrockCLI({
+            const cli = await BedrockCLI.create({
                 modelId: config.bedrock.modelId,
                 region: config.awsRegion,
                 systemPrompt: [
