@@ -21,14 +21,26 @@ export const createCommandExecutionTool = () => {
           maxBuffer: 1024 * 1024 * 10, // 10MB buffer
         });
 
-        // If there's stderr but the command didn't throw, it might be warnings
-        // We'll include it in the response but mark success as true
-        const output = stderr ? `${stdout}\n${stderr}` : stdout;
+        // Normalize the output first
+        let output = stderr ? `${stdout}\n${stderr}` : stdout;
+
+        // Clean up the output consistently
+        output = output
+          // Convert Windows line endings
+          .replace(/\r\n/g, "\n")
+          // Remove any leading/trailing whitespace if trimming is enabled
+          .split("\n")
+          .map((line) => (trimOutput ? line.trim() : line))
+          .join("\n")
+          // Remove multiple consecutive empty lines
+          .replace(/\n{3,}/g, "\n\n")
+          // Ensure at most one trailing newline
+          .replace(/\n+$/, "");
 
         return {
           success: true,
           command,
-          output: trimOutput ? output.trim() : output,
+          output,
           hasStderr: Boolean(stderr),
         };
       } catch (error: any) {

@@ -1,19 +1,24 @@
-import readline from "readline";
+import * as pty from "node-pty";
 import chalk from "chalk";
 import { BedrockAgent } from "./BedrockAgent.js";
 import { processManager } from "./BackgroundProcessManager.js";
-import path from "path";
+import { InputInterceptor } from "./InputInterceptor.js";
 class BedrockCLI {
     constructor(config) {
-        this.rl = null;
         this.isFirstChunk = true;
+        this.tools = new Map();
         this.isRunning = false;
         this.cleanupPromise = null;
-        this.spinnerInterval = null;
-        this.spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-        this.currentFrame = 0;
         this.MAX_WIDTH = 100;
-        this.isThinking = false;
+        this.ptyProcess = null;
+        this.aiMode = false;
+        this.lastPrompt = "";
+        this.isMessageComplete = false;
+        this.isProcessing = false;
+        this.isShowingStatus = false;
+        if (process.env.BEDROCK_CLI_RUNNING === "true") {
+            throw new Error("Cannot create nested Terminal AI Assistant instance");
+        }
         this.agent = new BedrockAgent({
             modelId: config.modelId,
             maxTokens: config.maxTokens,
@@ -25,58 +30,91 @@ class BedrockCLI {
         });
         config.tools?.forEach((tool) => {
             this.agent.registerTool(tool);
+            this.tools.set(tool.spec().toolSpec.name, tool);
         });
-        this.systemPrompt = config.systemPrompt || [
-            { text: "You are a helpful CLI assistant." },
-        ];
         this.sessionId = config.sessionId || "cli-session";
-        this.tools = new Map();
         this.assistantName = config.assistantName || "Assistant";
-        if (config.tools) {
-            for (const tool of config.tools) {
-                const toolSpec = tool.spec();
-                this.tools.set(toolSpec.toolSpec.name, tool);
-            }
+    }
+    static async create(config) {
+        // Check our class-level instance
+        if (BedrockCLI.instance) {
+            console.error(chalk.red("\nError: Terminal AI Assistant is already running"));
+            throw new Error("Terminal AI Assistant instance already exists");
+        }
+        BedrockCLI.instance = new BedrockCLI(config);
+        return BedrockCLI.instance;
+    }
+    showStatus(message) {
+        if (!this.isProcessing) {
+            this.isProcessing = true;
+        }
+        // Clear and update status line
+        if (process.stdout.cursorTo) {
+            process.stdout.cursorTo(0);
+            process.stdout.clearLine(0);
+            process.stdout.write(chalk.cyan(`${message}...`));
+            this.isShowingStatus = true;
         }
     }
-    startSpinner(message = "Thinking") {
-        if (this.spinnerInterval)
+    clearStatus() {
+        if (this.isProcessing && process.stdout.cursorTo && this.isShowingStatus) {
+            process.stdout.cursorTo(0);
+            process.stdout.clearLine(0);
+            this.isShowingStatus = false;
+            this.isProcessing = false;
+        }
+    }
+    getPromptWithIndicator() {
+        const basePrompt = this.lastPrompt.replace(/\[⚡\]|\[🤖\]/g, "").trim();
+        return `${basePrompt} ${this.aiMode ? chalk.cyan("[🤖]") : chalk.yellow("[⚡]")} `;
+    }
+    initializePty() {
+        this.ptyProcess = pty.spawn(process.platform === "win32" ? "powershell.exe" : "bash", [], {
+            name: "xterm-color",
+            cols: process.stdout.columns,
+            rows: process.stdout.rows,
+            cwd: process.cwd(),
+            env: process.env,
+        });
+        this.inputInterceptor = new InputInterceptor(this);
+        process.stdin.setRawMode(true);
+        process.stdin.pipe(this.inputInterceptor).pipe(this.ptyProcess);
+        this.ptyProcess.onData(this.handlePtyOutput.bind(this));
+        process.stdout.on("resize", () => {
+            this.ptyProcess?.resize(process.stdout.columns, process.stdout.rows);
+        });
+    }
+    handlePtyOutput(data) {
+        // In AI mode, if we're processing a message, don't show PTY output
+        if (this.aiMode && this.isProcessing) {
             return;
-        this.isThinking = true;
-        if (this.rl) {
-            this.rl.pause(); // Pause readline to prevent input
         }
-        process.stdout.write("\n"); // New line before spinner
-        this.spinnerInterval = setInterval(() => {
-            process.stdout.clearLine(0);
-            process.stdout.cursorTo(0);
-            process.stdout.write(chalk.cyan(`${this.spinnerFrames[this.currentFrame]} ${message}...`));
-            this.currentFrame = (this.currentFrame + 1) % this.spinnerFrames.length;
-        }, 80);
-    }
-    stopSpinner() {
-        if (this.spinnerInterval) {
-            clearInterval(this.spinnerInterval);
-            this.spinnerInterval = null;
-            this.currentFrame = 0;
-            process.stdout.clearLine(0);
-            process.stdout.cursorTo(0);
-            this.isThinking = false;
-            if (this.rl) {
-                this.rl.resume(); // Resume readline when thinking is done
+        process.stdout.write(data);
+        if (data.includes("$") || data.includes(">") || data.includes("%")) {
+            const lines = data.split("\n");
+            const lastLine = lines[lines.length - 1];
+            if (lastLine.includes("$") ||
+                lastLine.includes(">") ||
+                lastLine.includes("%")) {
+                this.lastPrompt = lastLine;
+                this.inputInterceptor.setCurrentPrompt(this.lastPrompt);
+                if (!this.lastPrompt.includes("[🤖]") &&
+                    !this.lastPrompt.includes("[⚡]")) {
+                    const indicator = this.aiMode
+                        ? chalk.cyan("[🤖]")
+                        : chalk.yellow("[⚡]");
+                    process.stdout.write(` ${indicator} `);
+                }
             }
         }
     }
-    getCurrentDirectoryName() {
-        const currentPath = process.cwd();
-        return path.basename(currentPath);
+    enterAiMode() {
+        this.aiMode = true;
+        process.stdout.write(this.getPromptWithIndicator());
     }
-    updatePrompt() {
-        if (this.rl) {
-            const currentDir = this.getCurrentDirectoryName();
-            this.rl.setPrompt(chalk.blue(`${currentDir}> `));
-            this.rl.prompt(true);
-        }
+    exitAiMode() {
+        this.aiMode = false;
+        process.stdout.write(this.getPromptWithIndicator());
     }
     wrapText(text, indent = 0) {
         const words = text.split(/(\s+)/);
@@ -85,37 +123,30 @@ class BedrockCLI {
         const maxWidth = this.MAX_WIDTH - indent;
         for (const word of words) {
             if (currentLine.length + word.length > maxWidth) {
-                if (currentLine.trim()) {
+                if (currentLine.trim())
                     lines.push(currentLine);
-                }
                 currentLine = " ".repeat(indent) + word;
             }
             else {
                 currentLine += word;
             }
         }
-        if (currentLine.trim()) {
+        if (currentLine.trim())
             lines.push(currentLine);
-        }
         return lines.join("\n");
     }
-    displayTimestampedMessage(prefix, message, color) {
-        const timestamp = new Date().toLocaleTimeString();
-        console.log(color(`${prefix} `) + chalk.gray(`[${timestamp}]`));
-        console.log(color(this.wrapText(message)) + "\n");
-    }
     displayWelcomeMessage() {
-        const title = "Welcome to LLMCLI, the AI CLI Assistant";
-        const horizontalLine = "─".repeat(this.MAX_WIDTH);
-        console.log(chalk.cyan("\n" + horizontalLine));
-        console.log(chalk.cyan(title.padStart(this.MAX_WIDTH / 2 + title.length / 2)));
-        console.log(chalk.cyan(horizontalLine + "\n"));
-        console.log(chalk.gray("Available commands:"));
-        console.log(chalk.gray("  /exit, /quit    Exit session"));
-        console.log(chalk.gray("  /tools          List available tools"));
-        console.log(chalk.gray("  /clear          Clear terminal"));
-        console.log();
-        this.displayTimestampedMessage(this.assistantName, "Hello! I'm your AI assistant. How can I help you today?", chalk.cyan);
+        console.log("\n" + chalk.cyan("─".repeat(50)));
+        console.log(chalk.cyan("LLMCLI"));
+        console.log(chalk.gray("\nModes:"));
+        console.log(chalk.yellow("[⚡] Terminal"));
+        console.log(chalk.cyan("[🤖] AI"));
+        console.log(chalk.gray("\nCommands:"));
+        console.log(chalk.gray("/ - Toggle between modes"));
+        console.log(chalk.gray("In AI mode:"));
+        console.log(chalk.gray("  exit, quit - Close session"));
+        console.log(chalk.gray("  tools - List tools"));
+        console.log(chalk.gray("  clear - Clear screen\n"));
     }
     displayToolsList() {
         console.log(chalk.yellow.bold("\n🔧 Available Tools:"));
@@ -129,168 +160,143 @@ class BedrockCLI {
         }
         console.log();
     }
-    createReadlineInterface() {
-        const currentDir = this.getCurrentDirectoryName();
-        const rl = readline.createInterface({
-            input: process.stdin,
-            output: process.stdout,
-            prompt: chalk.blue(`${currentDir}> `),
-            terminal: true,
-            historySize: 1000,
-        });
-        rl.on("SIGINT", () => {
-            if (this.rl) {
-                this.rl.close();
-            }
-        });
-        return rl;
-    }
-    async handleToolResult(result) {
-        if (result.name === "executeCommand" ||
-            result.name === "executeBackgroundCommand") {
-            this.stopSpinner();
-            if (result.status === "success") {
-                process.stdout.write(chalk.cyan(`\nCommand: ${result.result.command}\n`));
-                const toolOutput = result.result;
-                const toolOutputString = JSON.stringify(toolOutput.output, null, 2);
-                process.stdout.write(chalk.yellowBright(`Result: ${toolOutputString}\n`));
-                this.updatePrompt();
-            }
-            else {
-                process.stdout.write(chalk.red(`\nError: ${result.result}\n`));
-            }
-        }
-    }
-    async handleCommands(input) {
-        const command = input.toLowerCase().trim();
-        switch (command) {
-            case "/exit":
-            case "/quit":
+    async handleAiInput(input) {
+        const trimmedInput = input.trim().toLowerCase();
+        // Handle special commands
+        switch (trimmedInput) {
+            case "exit":
+            case "quit":
                 await this.cleanup();
                 process.exit(0);
-                return true;
-            case "/tools":
+                return;
+            case "tools":
                 this.displayToolsList();
-                return true;
-            case "/clear":
+                this.showPrompt();
+                return;
+            case "clear":
                 console.clear();
                 this.displayWelcomeMessage();
-                return true;
-            default:
-                return false;
+                this.showPrompt();
+                return;
         }
-    }
-    async handleUserInput(line) {
-        if (this.isThinking) {
-            // Ignore input while thinking
+        if (!trimmedInput) {
+            this.showPrompt();
             return;
         }
-        const trimmedLine = line.trim();
-        // Clear the previous line
-        process.stdout.moveCursor(0, -1);
-        process.stdout.clearLine(1);
-        console.log(); // Add a newline
-        if (!trimmedLine) {
-            this.rl?.prompt();
-            return;
-        }
-        if (await this.handleCommands(trimmedLine)) {
-            if (this.isRunning && this.rl) {
-                this.rl.prompt();
-            }
-            return;
-        }
-        // Display timestamped message for user input
-        const timestamp = new Date().toLocaleTimeString();
-        console.log(chalk.blue(`You [${timestamp}]`));
-        console.log(chalk.white(this.wrapText(trimmedLine)) + "\n");
         try {
-            this.startSpinner();
-            await this.agent.sendMessage(this.sessionId, trimmedLine);
+            process.stdout.write("\n");
+            this.isProcessing = true; // Set this before showing status
+            this.showStatus("Thinking");
+            await this.agent.sendMessage(this.sessionId, input).catch((error) => {
+                this.clearStatus();
+                this.isProcessing = false; // Reset processing state
+                console.error(chalk.red("\nFailed to send message:"), error);
+                this.showPrompt();
+            });
         }
         catch (error) {
-            this.stopSpinner();
+            this.clearStatus();
+            this.isProcessing = false; // Reset processing state
             console.error(chalk.red("\nFailed to send message:"), error);
-            this.rl?.prompt();
+            this.showPrompt();
+        }
+    }
+    showPrompt() {
+        process.stdout.write(this.getPromptWithIndicator());
+    }
+    handleToolResult(result) {
+        // Clear any existing status
+        this.clearStatus();
+        if (result.name === "executeCommand" ||
+            result.name === "executeBackgroundCommand") {
+            if (result.status === "success") {
+                // Show command with minimal formatting
+                process.stdout.write(chalk.cyan(`Command: ${result.result.command}\n`));
+                // Output is already cleaned up by the tool, just add one newline
+                process.stdout.write(chalk.yellowBright(`Result: ${result.result.output}\n`));
+            }
+            else {
+                process.stdout.write(chalk.red(`Error: ${result.result}\n`));
+            }
+        }
+        // Only show processing status if we're still processing the overall message
+        if (!this.isMessageComplete && this.isProcessing) {
+            this.showStatus("Processing");
         }
     }
     async cleanup() {
-        if (this.cleanupPromise) {
+        if (this.cleanupPromise)
             return this.cleanupPromise;
-        }
         this.cleanupPromise = (async () => {
             console.log(chalk.yellow("\nCleaning up background processes..."));
             try {
-                // Force kill with true and increased timeout
                 await processManager.cleanup(8000, true);
                 this.isRunning = false;
-                if (this.rl) {
-                    this.rl.removeAllListeners();
-                    this.rl.close();
-                    this.rl = null;
+                if (this.ptyProcess) {
+                    this.ptyProcess.kill();
+                    this.ptyProcess = null;
                 }
+                process.stdin.setRawMode(false);
+                process.stdin.removeAllListeners("data");
+                // Clear all instance references
+                delete process.env.BEDROCK_CLI_RUNNING;
+                BedrockCLI.instance = null;
                 console.log(chalk.cyan("\n👋 Thanks for chatting! See you next time!\n"));
             }
             catch (error) {
                 console.error(chalk.red("Error during cleanup:"), error);
-                throw error; // Propagate the error to be handled by the main program
+                throw error;
             }
         })();
         return this.cleanupPromise;
     }
     async start() {
         if (this.isRunning) {
+            console.error(chalk.red("\nError: CLI is already running"));
             throw new Error("CLI is already running");
         }
+        process.env.BEDROCK_CLI_RUNNING = "true";
         this.isRunning = true;
-        return new Promise((resolve) => {
-            this.agent
-                .createConversation(this.sessionId, {
-                systemPrompt: this.systemPrompt,
+        try {
+            await this.agent.createConversation(this.sessionId, {
+                systemPrompt: [{ text: "You are a helpful CLI assistant." }],
                 onMessage: (chunk) => {
                     if (this.isFirstChunk) {
-                        this.stopSpinner();
+                        this.clearStatus();
                         const timestamp = new Date().toLocaleTimeString();
-                        process.stdout.write(chalk.cyan(`${this.assistantName} [${timestamp}]\n`));
+                        process.stdout.write(chalk.cyan(`\n${this.assistantName} [${timestamp}]\n`));
                         this.isFirstChunk = false;
                     }
                     process.stdout.write(chalk.green(chunk));
                 },
                 onComplete: () => {
-                    this.stopSpinner();
+                    this.isMessageComplete = true;
+                    this.clearStatus();
                     this.isFirstChunk = true;
-                    process.stdout.write("\n\n");
-                    if (this.isRunning && this.rl) {
-                        this.rl.prompt();
-                    }
+                    this.isProcessing = false; // Reset processing state
+                    process.stdout.write("\n");
+                    this.showPrompt();
                 },
-                onToolResult: (result) => this.handleToolResult(result),
-                onToolUse: (result) => {
-                    console.log("Tool will be used", result);
-                    this.startSpinner();
+                onToolResult: this.handleToolResult.bind(this),
+                onToolUse: () => {
+                    if (!this.isProcessing) {
+                        this.showStatus("Executing command");
+                    }
                 },
                 onError: (error) => {
-                    this.stopSpinner();
-                    console.error(chalk.red("\n❌ Error:"), error);
-                    if (this.isRunning && this.rl) {
-                        this.rl.prompt();
-                    }
+                    this.clearStatus();
+                    console.error(chalk.red("\nError:"), error);
+                    this.showPrompt();
                 },
-            })
-                .then(() => {
-                this.rl = this.createReadlineInterface();
-                this.rl.on("line", async (line) => {
-                    await this.handleUserInput(line);
-                });
-                this.displayWelcomeMessage();
-                this.rl.prompt();
-            })
-                .catch(async (error) => {
-                console.error(chalk.red("Failed to initialize conversation:"), error);
-                await this.cleanup();
-                resolve();
             });
-        });
+            this.displayWelcomeMessage();
+            this.initializePty();
+        }
+        catch (error) {
+            console.error(chalk.red("Failed to initialize:"), error);
+            await this.cleanup();
+        }
     }
 }
+BedrockCLI.instance = null;
 export { BedrockCLI };
