@@ -80,7 +80,12 @@ program
     
     ${chalk.gray("Version: " + packageJson.version)}
     `));
-async function validateCredentialsAndAccess() {
+async function validateCredentialsAndAccess(skipValidation = false) {
+    if (skipValidation) {
+        console.log(chalk.yellow("\n⚠️  Warning: Skipping AWS credentials and Bedrock access validation." +
+            "\n   This may lead to runtime errors if credentials are invalid or Bedrock access is not properly configured."));
+        return true;
+    }
     const credSpinner = ora("Validating AWS credentials...").start();
     try {
         const hasValidCreds = await configManager.hasValidCredentials();
@@ -150,7 +155,8 @@ async function validateCredentialsAndAccess() {
 program
     .command("start", { isDefault: true })
     .description("Start the CLI interface")
-    .action(async () => {
+    .option("-s, --skip-validation", "Skip AWS credentials and Bedrock access validation")
+    .action(async (options) => {
     try {
         // Your existing default action code here
         const spinner = ora("Checking configuration...").start();
@@ -162,9 +168,9 @@ program
         else {
             spinner.succeed("Configuration found");
         }
-        const credentialsValid = await validateCredentialsAndAccess();
+        const credentialsValid = await validateCredentialsAndAccess(options.skipValidation);
         if (credentialsValid) {
-            console.log(chalk.gray(`\nTip: You can update your configuration anytime using ${chalk.bold(`${program.name()} configure`)}`));
+            console.log(chalk.gray(`\nTip: You can update your configuration anytime using '${chalk.bold(`${program.name()} config'`)}`));
             const config = configManager.getConfig();
             const cli = await BedrockCLI.create({
                 modelId: config.bedrock.modelId,

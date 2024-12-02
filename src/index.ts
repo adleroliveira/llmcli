@@ -105,7 +105,16 @@ program
     `)
   );
 
-async function validateCredentialsAndAccess(): Promise<boolean> {
+async function validateCredentialsAndAccess(skipValidation: boolean = false): Promise<boolean> {
+
+  if (skipValidation) {
+    console.log(chalk.yellow(
+      "\n⚠️  Warning: Skipping AWS credentials and Bedrock access validation." +
+      "\n   This may lead to runtime errors if credentials are invalid or Bedrock access is not properly configured."
+    ));
+    return true;
+  }
+
   const credSpinner = ora("Validating AWS credentials...").start();
 
   try {
@@ -196,7 +205,8 @@ async function validateCredentialsAndAccess(): Promise<boolean> {
 program
   .command("start", { isDefault: true })
   .description("Start the CLI interface")
-  .action(async () => {
+  .option("-s, --skip-validation", "Skip AWS credentials and Bedrock access validation")
+  .action(async (options) => {
     try {
       // Your existing default action code here
       const spinner = ora("Checking configuration...").start();
@@ -214,13 +224,13 @@ program
         spinner.succeed("Configuration found");
       }
 
-      const credentialsValid = await validateCredentialsAndAccess();
+      const credentialsValid = await validateCredentialsAndAccess(options.skipValidation);
 
       if (credentialsValid) {
         console.log(
           chalk.gray(
-            `\nTip: You can update your configuration anytime using ${chalk.bold(
-              `${program.name()} configure`
+            `\nTip: You can update your configuration anytime using '${chalk.bold(
+              `${program.name()} config'`
             )}`
           )
         );

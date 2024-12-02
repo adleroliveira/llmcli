@@ -106,15 +106,28 @@ class BedrockCLI {
   }
 
   private initializePty() {
+    // Determine the appropriate shell
+    const shell = process.platform === "win32" 
+      ? "powershell.exe" 
+      : process.platform === "darwin"
+        ? "/bin/zsh"
+        : process.env.SHELL || "bash";
+
+    // Add environment variable to silence bash deprecation warning
+    const env = {
+      ...process.env,
+      BASH_SILENCE_DEPRECATION_WARNING: "1"
+    };
+
     this.ptyProcess = pty.spawn(
-      process.platform === "win32" ? "powershell.exe" : "bash",
+      shell,
       [],
       {
         name: "xterm-color",
         cols: process.stdout.columns,
         rows: process.stdout.rows,
         cwd: process.cwd(),
-        env: process.env,
+        env: env,
       }
     );
 
@@ -154,7 +167,7 @@ class BedrockCLI {
           const indicator = this.aiMode
             ? chalk.cyan("[🤖]")
             : chalk.yellow("[⚡]");
-          process.stdout.write(` ${indicator} `);
+          process.stdout.write(`${indicator} `);
         }
       }
     }

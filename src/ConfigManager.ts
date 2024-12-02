@@ -23,6 +23,7 @@ export interface CliConfig {
   awsProfile?: string;
   awsRegion?: string;
   bedrock?: BedrockConfig;
+  authMethod?: "stored" | "environment" | "profile";
 }
 
 export interface AwsCredentials {
@@ -57,6 +58,7 @@ class ConfigManager {
       }
     }
 
+    // Load stored credentials if they exist
     if (existsSync(CREDENTIALS_FILE)) {
       try {
         this.runtimeCredentials = JSON.parse(
@@ -210,6 +212,22 @@ class ConfigManager {
   async detectAwsCredentials(): Promise<CredentialSource[]> {
     const availableMethods: CredentialSource[] = [];
 
+    // Check for stored manual credentials first
+    if (existsSync(CREDENTIALS_FILE)) {
+      try {
+        const storedCreds = JSON.parse(readFileSync(CREDENTIALS_FILE, "utf8"));
+        if (
+          storedCreds.accessKeyId && 
+          storedCreds.secretAccessKey &&
+          await this.validateCredentials(storedCreds)  // Add validation here
+        ) {
+          availableMethods.push("stored");
+        }
+      } catch (error) {
+        // Ignore errors when stored credentials are invalid
+      }
+    }
+
     // Try loading from environment
     try {
       const envCreds = await fromEnv()();
@@ -228,18 +246,6 @@ class ConfigManager {
       }
     } catch (error) {
       // Ignore errors when credentials file doesn't exist
-    }
-
-    // Check for stored manual credentials
-    if (existsSync(CREDENTIALS_FILE)) {
-      try {
-        const storedCreds = JSON.parse(readFileSync(CREDENTIALS_FILE, "utf8"));
-        if (storedCreds.accessKeyId && storedCreds.secretAccessKey) {
-          availableMethods.push("stored");
-        }
-      } catch (error) {
-        // Ignore errors when stored credentials are invalid
-      }
     }
 
     return availableMethods;
@@ -381,6 +387,8 @@ class ConfigManager {
             { mode: 0o600 }
           );
 
+          this.config.authMethod = "stored";
+
           console.log(
             chalk.yellow(
               "\nCredentials saved. Please ensure the config directory permissions are secure."
@@ -437,10 +445,11 @@ class ConfigManager {
       if (isValid) return;
     }
 
+    // Changed order to prioritize stored credentials
     const methods: Array<"stored" | "environment" | "profile"> = [
       "stored",
-      "environment",
       "profile",
+      "environment"
     ];
 
     for (const method of methods) {
@@ -468,14 +477,18 @@ class ConfigManager {
 
     try {
       const config = this.getConfig();
-      return (
-        !!(config.awsProfile || process.env.AWS_ACCESS_KEY_ID) &&
+      return !!(
+        // Check for any of the valid auth methods
+        (config.awsProfile || 
+         process.env.AWS_ACCESS_KEY_ID || 
+         config.authMethod === "stored") &&
+        // Still require region
         !!config.awsRegion
       );
     } catch {
       return false;
     }
-  }
+}
 
   async cleanup(options: { force?: boolean } = {}): Promise<void> {
     if (!options.force) {
