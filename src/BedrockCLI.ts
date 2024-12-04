@@ -4,7 +4,9 @@ import { BedrockAgent, Tool } from "./BedrockAgent.js";
 import { SystemContentBlock } from "@aws-sdk/client-bedrock-runtime";
 import { AwsCredentials } from "./ConfigManager";
 import { processManager } from "./BackgroundProcessManager.js";
-import { InputInterceptor } from "./InputInterceptor.js";
+// import { PtyManager } from "./PtyManager.js";
+import { PtyManager } from "./pty/PtyManager.js";
+import { setupModeSwitching } from "./pty/middlewares/setupModeSwitching.js";
 
 interface BedrockCLIConfig {
   modelId: string;
@@ -31,12 +33,10 @@ class BedrockCLI {
   private readonly assistantName: string;
   private readonly MAX_WIDTH = 100;
   private ptyProcess: pty.IPty | null = null;
-  private aiMode: boolean = false;
-  private inputInterceptor!: InputInterceptor;
-  private lastPrompt: string = "";
   private isMessageComplete: boolean = false;
   private isProcessing: boolean = false;
   private isShowingStatus: boolean = false;
+  private ptyManager: PtyManager | null = null;
 
   constructor(config: BedrockCLIConfig) {
     if (process.env.BEDROCK_CLI_RUNNING === "true") {
@@ -96,92 +96,6 @@ class BedrockCLI {
       this.isShowingStatus = false;
       this.isProcessing = false;
     }
-  }
-
-  private getPromptWithIndicator(): string {
-    const basePrompt = this.lastPrompt.replace(/\[⚡\]|\[🤖\]/g, "").trim();
-    return `${basePrompt} ${
-      this.aiMode ? chalk.cyan("[🤖]") : chalk.yellow("[⚡]")
-    } `;
-  }
-
-  private initializePty() {
-    // Determine the appropriate shell
-    const shell =
-      process.platform === "win32"
-        ? "powershell.exe"
-        : process.platform === "darwin"
-        ? "/bin/zsh"
-        : process.env.SHELL || "bash";
-
-    // Add environment variable to silence bash deprecation warning
-    const env = {
-      ...process.env,
-      BASH_SILENCE_DEPRECATION_WARNING: "1",
-    };
-
-    this.ptyProcess = pty.spawn(shell, [], {
-      name: "xterm-color",
-      cols: process.stdout.columns,
-      rows: process.stdout.rows,
-      cwd: process.cwd(),
-      env: env,
-    });
-
-    this.inputInterceptor = new InputInterceptor(this);
-    process.stdin.setRawMode(true);
-    process.stdin.pipe(this.inputInterceptor).pipe(this.ptyProcess as any);
-
-    this.ptyProcess.onData(this.handlePtyOutput.bind(this));
-    process.stdout.on("resize", () => {
-      this.ptyProcess?.resize(process.stdout.columns, process.stdout.rows);
-    });
-  }
-
-  private handlePtyOutput(data: string) {
-    // In AI mode, if we're processing a message, don't show PTY output
-    if (this.aiMode && this.isProcessing) {
-      return;
-    }
-
-    // Write the original PTY output first
-    process.stdout.write(data);
-
-    // Check for common prompt characters and line endings
-    const promptRegex = /(?:[%$>#]|(?:➜|❯).*?)[ ]*$/;
-    const lines = data.split("\n");
-    const lastLine = lines[lines.length - 1];
-
-    if (promptRegex.test(lastLine)) {
-      this.lastPrompt = lastLine;
-      this.inputInterceptor.setCurrentPrompt(this.lastPrompt);
-
-      // If the prompt doesn't already have our indicators, add them
-      if (!lastLine.includes("[🤖]") && !lastLine.includes("[⚡]")) {
-        // Small delay to ensure the prompt is fully rendered
-        setTimeout(() => {
-          this.updatePrompt();
-        }, 10);
-      }
-    }
-  }
-
-  public updatePrompt(forceUpdate: boolean = false) {
-    if ((this.lastPrompt && !this.isProcessing) || forceUpdate) {
-      const indicator = this.aiMode ? chalk.cyan("[🤖]") : chalk.yellow("[⚡]");
-      const cleanPrompt = this.lastPrompt.replace(/\[⚡\]|\[🤖\]/g, "").trim();
-      process.stdout.write("\r\x1b[K" + cleanPrompt + " " + indicator + " ");
-    }
-  }
-
-  public enterAiMode() {
-    this.aiMode = true;
-    this.updatePrompt(true);
-  }
-
-  public exitAiMode() {
-    this.aiMode = false;
-    this.updatePrompt(true);
   }
 
   private wrapText(text: string, indent: number = 0): string {
@@ -251,17 +165,17 @@ class BedrockCLI {
         return;
       case "tools":
         this.displayToolsList();
-        this.showPrompt();
+        // this.showPrompt();
         return;
       case "clear":
         console.clear();
         this.displayWelcomeMessage();
-        this.showPrompt();
+        // this.showPrompt();
         return;
     }
 
     if (!trimmedInput) {
-      this.showPrompt();
+      // this.showPrompt();
       return;
     }
 
@@ -273,18 +187,14 @@ class BedrockCLI {
         this.clearStatus();
         this.isProcessing = false; // Reset processing state
         console.error(chalk.red("\nFailed to send message:"), error);
-        this.showPrompt();
+        // this.showPrompt();
       });
     } catch (error) {
       this.clearStatus();
       this.isProcessing = false; // Reset processing state
       console.error(chalk.red("\nFailed to send message:"), error);
-      this.showPrompt();
+      // this.showPrompt();
     }
-  }
-
-  private showPrompt() {
-    process.stdout.write(this.getPromptWithIndicator());
   }
 
   private handleToolResult(result: any) {
@@ -376,7 +286,7 @@ class BedrockCLI {
           this.isFirstChunk = true;
           this.isProcessing = false; // Reset processing state
           process.stdout.write("\n");
-          this.showPrompt();
+          // this.showPrompt();
         },
         onToolResult: this.handleToolResult.bind(this),
         onToolUse: () => {
@@ -387,12 +297,28 @@ class BedrockCLI {
         onError: (error) => {
           this.clearStatus();
           console.error(chalk.red("\nError:"), error);
-          this.showPrompt();
+          // this.showPrompt();
         },
       });
 
       this.displayWelcomeMessage();
-      this.initializePty();
+      this.ptyManager = new PtyManager();
+      setupModeSwitching(this.ptyManager);
+      // this.ptyManager.onOutput("prompt", (event) => {
+      //   const aiMode = false; // Your AI mode toggle
+      //   const marker = aiMode ? "[AI]" : "[Normal]";
+
+      //   console.log(`Prompt(${event.content})`);
+
+      //   return {
+      //     content: `${event.content}`,
+      //     metadata: { aiMode },
+      //   };
+      // });
+      // this.ptyManager.registerCommand("quit", async () => {
+      //   await this.cleanup();
+      //   process.exit(0);
+      // });
     } catch (error) {
       console.error(chalk.red("Failed to initialize:"), error);
       await this.cleanup();

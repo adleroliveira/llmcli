@@ -39,6 +39,7 @@
     "commander": "^12.1.0",
     "inquirer": "^12.1.0",
     "js-yaml": "^4.1.0",
+    "log-update": "^6.1.0",
     "node-pty": "^1.0.0",
     "ora": "^8.1.1"
   }

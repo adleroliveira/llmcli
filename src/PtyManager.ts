@@ -29,7 +29,7 @@ export class PtyManager {
   private inputInterceptor!: InputInterceptor;
   private aiMode: boolean = false;
   private lastPrompt: string = "";
-  private promptRegex = /(?:\r?\n|^)(.*?➜)/;
+  private promptRegex = /(?:\r?\n|^)(.*?➜)(\s*$|\s+[^➜\n]*$)/;
 
   constructor(private config: PtyManagerConfig) {
     this.initialize();
@@ -69,21 +69,22 @@ export class PtyManager {
   private handlePtyOutput(data: string) {
     const prompt = this.makePrompt();
 
-    // Look for a prompt pattern in the output
+    // Look for a prompt pattern in the output, including at the end of the line
     const match = data.match(this.promptRegex);
     if (match) {
       // Store the most recent prompt including all ANSI codes
       this.lastPrompt = match[1];
+
+      // Handle both cases: prompt at end of line and prompt with additional text
+      const modifiedData = data.replace(
+        /(.*?➜)(\s*$|\s+[^➜\n]*$)/,
+        (_, promptPart, ending) => `${promptPart}${prompt}${ending}`
+      );
+
+      process.stdout.write(modifiedData);
+    } else {
+      process.stdout.write(data);
     }
-
-    // Modify the output to include our marker while preserving the original prompt
-    const modifiedData = data.replace(
-      /(.*?➜)(\s+[^➜\n]*?)(\s*)$/,
-      (_, promptPart, middle, ending) =>
-        `${promptPart}${prompt}${middle}${ending}`
-    );
-
-    process.stdout.write(modifiedData);
   }
 
   private getShell() {

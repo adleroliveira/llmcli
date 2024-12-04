@@ -1,84 +1,89 @@
-import { Transform } from "stream";
-import { BedrockCLI } from "./BedrockCLI";
+// import { Transform } from "stream";
+// import { BedrockCLI } from "./BedrockCLI";
 
-export class InputInterceptor extends Transform {
-  private buffer: string = "";
-  private aiMode: boolean = false;
-  private lineBuffer: string = "";
-  private currentPrompt: string = "";
+// export class InputInterceptor extends Transform {
+//   private buffer: string = "";
+//   private aiMode: boolean = false;
+//   private lineBuffer: string = "";
+//   private currentPrompt: string = "";
+//   private lastCommand: string = "";
 
-  constructor(private cli: BedrockCLI) {
-    super();
-  }
+//   constructor(private cli: BedrockCLI) {
+//     super();
+//   }
 
-  _transform(chunk: Buffer, encoding: string, callback: Function) {
-    const input = chunk.toString();
+//   public getLastCommand(): string {
+//     return this.lastCommand;
+//   }
 
-    // Handle backspace/delete
-    if (input === "\b" || input === "\x7f") {
-      if (this.lineBuffer.length > 0) {
-        this.lineBuffer = this.lineBuffer.slice(0, -1);
-        if (this.aiMode) {
-          this.buffer = this.buffer.slice(0, -1);
-          process.stdout.write("\b \b");
-        }
-      }
-      callback(null, this.aiMode ? "" : input);
-      return;
-    }
+//   _transform(chunk: Buffer, encoding: string, callback: Function) {
+//     const input = chunk.toString();
 
-    // Handle newline
-    if (input.includes("\r") || input.includes("\n")) {
-      if (this.aiMode && this.buffer.trim()) {
-        this.cli.handleAiInput(this.buffer.trim());
-      }
-      this.lineBuffer = "";
-      this.buffer = "";
-      callback(null, this.aiMode ? "\r\n" : input);
-      return;
-    }
+//     // Handle backspace/delete
+//     if (input === "\b" || input === "\x7f") {
+//       if (this.lineBuffer.length > 0) {
+//         this.lineBuffer = this.lineBuffer.slice(0, -1);
+//         if (this.aiMode) {
+//           this.buffer = this.buffer.slice(0, -1);
+//           process.stdout.write("\b \b");
+//         }
+//       }
+//       callback(null, this.aiMode ? "" : input);
+//       return;
+//     }
 
-    this.lineBuffer += input;
+//     // Handle newline
+//     if (input.includes("\r") || input.includes("\n")) {
+//       this.lastCommand = this.lineBuffer;
+//       if (this.aiMode && this.buffer.trim()) {
+//         this.cli.handleAiInput(this.buffer.trim());
+//       }
+//       this.lineBuffer = "";
+//       this.buffer = "";
+//       callback(null, this.aiMode ? "\r\n" : input);
+//       return;
+//     }
 
-    // Check for AI mode toggle
-    if (this.lineBuffer === "/" && (!this.buffer || this.buffer === "/")) {
-      this.toggleAiMode();
-      this.lineBuffer = "";
-      this.buffer = "";
-      callback(null, "");
-      return;
-    }
+//     this.lineBuffer += input;
 
-    if (this.aiMode) {
-      this.buffer += input;
-      process.stdout.write(input);
-      callback(null, "");
-    } else {
-      callback(null, chunk);
-    }
-  }
+//     // Check for AI mode toggle
+//     if (this.lineBuffer === "/" && (!this.buffer || this.buffer === "/")) {
+//       this.toggleAiMode();
+//       this.lineBuffer = "";
+//       this.buffer = "";
+//       callback(null, "");
+//       return;
+//     }
 
-  private toggleAiMode() {
-    this.aiMode = !this.aiMode;
-    process.stdout.write("\r\x1b[K"); // Clear the current line
-    if (this.aiMode) {
-      this.cli.enterAiMode();
-    } else {
-      this.cli.exitAiMode();
-    }
-    // Force prompt update after mode switch
-    this.cli.updatePrompt(true);
-  }
+//     if (this.aiMode) {
+//       this.buffer += input;
+//       process.stdout.write(input);
+//       callback(null, "");
+//     } else {
+//       callback(null, chunk);
+//     }
+//   }
 
-  public setCurrentPrompt(prompt: string) {
-    this.currentPrompt = prompt.replace(/\[⚡\]|\[🤖\]/g, "").trim();
-  }
+//   private toggleAiMode() {
+//     this.aiMode = !this.aiMode;
+//     process.stdout.write("\r\x1b[K"); // Clear the current line
+//     if (this.aiMode) {
+//       this.cli.enterAiMode();
+//     } else {
+//       this.cli.exitAiMode();
+//     }
+//     // Force prompt update after mode switch
+//   }
 
-  public getCurrentPrompt(): string {
-    return this.currentPrompt;
-  }
+//   // public setCurrentPrompt(prompt: string) {
+//   //   this.currentPrompt = prompt.replace(/\[⚡\]|\[🤖\]/g, "").trim();
+//   // }
 
-  public isInAiMode(): boolean {
-    return this.aiMode;
-  }
-}
+//   // public getCurrentPrompt(): string {
+//   //   return this.currentPrompt;
+//   // }
+
+//   public isInAiMode(): boolean {
+//     return this.aiMode;
+//   }
+// }

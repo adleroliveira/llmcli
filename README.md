@@ -22,7 +22,7 @@ npm install -g github:adleroliveira/llmcli
 
 - AWS Account with Bedrock access enabled
 - AWS credentials configured locally or AWS IAM role with appropriate permissions
-- Node.js 18 or higher
+- Node.js 18 or higher (recommended)
 - pnpm (recommended) or npm
 
 ## Commands
@@ -35,25 +35,23 @@ npm install -g github:adleroliveira/llmcli
 
 ## Features
 
-The CLI includes several built-in tools that the AI assistant can use:
+### CLI Assistant
 
-### File Operations
+The CLI assistant is designed to be:
+
+- Clear and concise
+- Terminal-friendly
+- Direct and actionable
+- Context-aware
+
+### Core Capabilities
 
 - Directory listing and navigation
 - File reading and writing capabilities
 - File content analysis and manipulation
-
-### Command Execution
-
 - Execute shell commands through the AI assistant
 - Background process management
 - Graceful shutdown handling
-
-### Interactive Experience
-
-- Real-time command validation
-- Progress indicators for long-running operations
-- Helpful error messages and recovery options
 
 ## Configuration
 
@@ -63,6 +61,18 @@ On first run or when using `llmcli configure`, the tool will:
 2. Check Bedrock model access
 3. Set up necessary configurations
 4. Store settings securely for future sessions
+
+## Advanced Usage
+
+### Skipping Initial Validation
+
+You can skip AWS credentials and Bedrock access validation when starting the CLI:
+
+```bash
+llmcli start --skip-validation
+```
+
+**Note:** Skipping validation may lead to runtime errors if credentials are invalid.
 
 ## Error Handling
 
