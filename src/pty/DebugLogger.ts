@@ -9,11 +9,18 @@ export class DebugLogger {
   }
 
   static log(message: string, data?: any) {
-    const timestamp = new Date().toISOString();
-    const logMessage = `[${timestamp}] ${message}\n`;
-    const debugData = data ? `${JSON.stringify(data, null, 2)}\n` : "";
+    // const timestamp = new Date().toISOString();
+    const logMessage = `${message}\n`;
+    const debugData = data
+      ? `${logMessage} ${JSON.stringify(data, null, 2)}\n`
+      : "";
 
-    this.logStream.write(logMessage + debugData);
+    // this.logStream.write(logMessage + debugData);
+    this.logStream.write(debugData);
+  }
+
+  static logRaw(message: string) {
+    this.logStream.write(message);
   }
 
   static close() {

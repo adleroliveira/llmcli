@@ -1,5 +1,4 @@
 import { DebugLogger } from "../DebugLogger.js";
-DebugLogger.initialize();
 export const createModeToggleMiddleware = () => ({
     id: "mode-toggle",
     events: ["raw", "command"],
@@ -26,53 +25,56 @@ export const createPromptModifierMiddleware = () => ({
     id: "prompt-modifier",
     events: ["line"],
     transform: async (event, context) => {
-        // Clean the content more thoroughly
+        DebugLogger.logRaw(event.content);
+        // Enhanced cleaning function that preserves prompt structure
         const cleanContent = (str) => {
             return (str
-                // Remove ANSI escape sequences
-                .replace(/\x1B\[[\x30-\x3F]*[\x20-\x2F]*[\x40-\x7E]/g, "")
-                .replace(/\x1B[@-Z\\-_]/g, "")
-                // Remove control characters except prompt symbols
-                .replace(/[\x00-\x1F\x7F-\x9F=]/g, "")
-                // Replace multiple spaces with single space
-                .replace(/\s+/g, " ")
+                // Remove most ANSI escape sequences but preserve some terminal state changes
+                .replace(/\x1B\[[0-9;]*[A-Za-z]/g, "") // Standard ANSI
+                .replace(/\x1B[\[\]()#;?].*?(?:[@-~]|\x07)/g, "") // Extended ANSI
+                // Remove specific control sequences from your output
+                .replace(/\x1B[=>]/g, "")
+                .replace(/\x1B\[\?[0-9;]*[hl]/g, "")
+                // Keep newlines and carriage returns for better prompt detection
+                .replace(/[^\S\r\n]+/g, " ") // Replace multiple spaces with single space
                 .trim());
         };
+        // Get both cleaned and partially cleaned content for comparison
         const strippedContent = cleanContent(event.content);
-        // Match common shell prompt endings
-        const promptMatch = strippedContent.match(/[%$#>]\s*$/);
-        DebugLogger.log("Prompt detection", {
-            original: event.content,
-            stripped: strippedContent,
-            promptMatch: promptMatch ? promptMatch[0] : null,
-        });
+        // More flexible prompt detection that handles your specific case
+        const promptRegex = /(?:^|\r?\n).*?(?:bash|zsh|%|>|\$|#)\s*$/;
+        const promptMatch = strippedContent.match(promptRegex);
+        // DebugLogger.log("Prompt detection", {
+        //   original: event.content,
+        //   stripped: strippedContent,
+        //   promptMatch: promptMatch ? promptMatch[0] : null,
+        // });
         if (!promptMatch) {
             return { content: event.content };
         }
-        // For the first prompt, initialize mode metadata
+        // Initialize mode metadata on first prompt
         if (!context.metadata.isFirstPrompt) {
             context.metadata.isFirstPrompt = true;
             context.metadata.mode = "terminal";
         }
         const mode = context.metadata.mode || "terminal";
-        const modeTag = `[${mode}]`;
-        // Find the last occurrence of the prompt symbol in the original content
-        const promptSymbol = promptMatch[0].trim();
-        const lastPromptPos = event.content.lastIndexOf(promptSymbol);
-        if (lastPromptPos === -1) {
-            return { content: event.content };
-        }
-        // Insert the mode tag after the prompt
-        const modifiedContent = event.content.slice(0, lastPromptPos + promptSymbol.length) +
-            ` ${modeTag}` +
-            event.content.slice(lastPromptPos + promptSymbol.length);
-        DebugLogger.log("Prompt modification", {
-            original: event.content,
-            modified: modifiedContent,
-            mode,
-            promptSymbol,
-            lastPromptPos,
-        });
+        const modeTag = ` [${mode}]`;
+        // Find the last control sequence in the original content
+        const lastControlSeq = event.content.match(/\x1B[^]*?$/);
+        const insertPosition = lastControlSeq
+            ? event.content.length - lastControlSeq[0].length
+            : event.content.length;
+        // Insert the mode tag before any trailing control sequences
+        const modifiedContent = event.content.slice(0, insertPosition) +
+            modeTag +
+            event.content.slice(insertPosition);
+        // DebugLogger.log("Prompt modification", {
+        //   original: event.content,
+        //   modified: modifiedContent,
+        //   mode,
+        //   insertPosition,
+        //   hasControlSeq: !!lastControlSeq,
+        // });
         return {
             content: modifiedContent,
             metadata: {

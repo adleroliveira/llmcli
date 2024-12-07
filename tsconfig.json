@@ -3,10 +3,11 @@
     "target": "ES2020",
     "module": "ESNext",
     "rootDir": "./src",
-    "moduleResolution": "bundler",
+    "moduleResolution": "Node",
     "outDir": "./dist",
     "forceConsistentCasingInFileNames": true,
     "strict": true,
+    "esModuleInterop": true,
     "skipLibCheck": true
   },
   "include": ["src/**/*"],

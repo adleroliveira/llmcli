@@ -4,9 +4,10 @@ import { BedrockAgent, Tool } from "./BedrockAgent.js";
 import { SystemContentBlock } from "@aws-sdk/client-bedrock-runtime";
 import { AwsCredentials } from "./ConfigManager";
 import { processManager } from "./BackgroundProcessManager.js";
-// import { PtyManager } from "./PtyManager.js";
 import { PtyManager } from "./pty/PtyManager.js";
-import { setupModeSwitching } from "./pty/middlewares/setupModeSwitching.js";
+import { DebugLogger } from "./pty/DebugLogger.js";
+import { createPromptDetectorMiddleware } from "./pty/middlewares/PromptMiddleware.js";
+DebugLogger.initialize();
 
 interface BedrockCLIConfig {
   modelId: string;
@@ -303,22 +304,19 @@ class BedrockCLI {
 
       this.displayWelcomeMessage();
       this.ptyManager = new PtyManager();
-      setupModeSwitching(this.ptyManager);
-      // this.ptyManager.onOutput("prompt", (event) => {
-      //   const aiMode = false; // Your AI mode toggle
-      //   const marker = aiMode ? "[AI]" : "[Normal]";
+      this.ptyManager.use(createPromptDetectorMiddleware());
+      // this.ptyManager.use({
+      //   // Handle mode switching on '/' input
+      //   onInput: (char: string) => {
+      //     return char;
+      //   },
 
-      //   console.log(`Prompt(${event.content})`);
-
-      //   return {
-      //     content: `${event.content}`,
-      //     metadata: { aiMode },
-      //   };
+      //   onOutput: (command) => {
+      //     DebugLogger.log("", command);
+      //     return command;
+      //   },
       // });
-      // this.ptyManager.registerCommand("quit", async () => {
-      //   await this.cleanup();
-      //   process.exit(0);
-      // });
+      this.ptyManager.initialize();
     } catch (error) {
       console.error(chalk.red("Failed to initialize:"), error);
       await this.cleanup();

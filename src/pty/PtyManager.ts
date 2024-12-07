@@ -1,20 +1,16 @@
 import * as pty from "node-pty";
-import { InputProcessor } from "./InputProcessor.js";
-import { OutputProcessor } from "./OutputProcessor.js";
-import { Middleware } from "./PtyStreamProcessor.js";
+import {
+  TerminalStreamProcessor,
+  TerminalMiddleware,
+} from "./TerminalStreamProcessor.js";
 
 export class PtyManager {
   private ptyProcess: pty.IPty | null = null;
-  private inputProcessor: InputProcessor;
-  private outputProcessor: OutputProcessor;
+  private processor = new TerminalStreamProcessor();
 
-  constructor() {
-    this.inputProcessor = new InputProcessor();
-    this.outputProcessor = new OutputProcessor();
-    this.initialize();
-  }
+  constructor() {}
 
-  private initialize() {
+  public initialize() {
     const env = {
       ...process.env,
       BASH_SILENCE_DEPRECATION_WARNING: "1",
@@ -29,19 +25,15 @@ export class PtyManager {
     });
 
     process.stdin.setRawMode(true);
-    process.stdin.pipe(this.inputProcessor).pipe(this.ptyProcess as any);
+    process.stdin
+      .pipe(this.processor.createInputStream())
+      .pipe(this.ptyProcess as any);
 
-    this.ptyProcess.onData((data) => {
-      this.outputProcessor._transform(
-        Buffer.from(data),
-        "utf8",
-        (error: Error | null, transformedData: Buffer | undefined) => {
-          if (!error && transformedData) {
-            process.stdout.write(transformedData);
-          }
-        }
-      );
-    });
+    this.ptyProcess.onData(
+      this.processor.createOutputHandler((data) => {
+        process.stdout.write(data);
+      })
+    );
 
     process.stdout.on("resize", () => {
       this.ptyProcess?.resize(process.stdout.columns, process.stdout.rows);
@@ -56,17 +48,8 @@ export class PtyManager {
       : process.env.SHELL || "bash";
   }
 
-  public addInputMiddleware(middleware: Middleware): void {
-    this.inputProcessor.addMiddleware(middleware);
-  }
-
-  public addOutputMiddleware(middleware: Middleware): void {
-    this.outputProcessor.addMiddleware(middleware);
-  }
-
-  public removeMiddleware(middlewareId: string): void {
-    this.inputProcessor.removeMiddleware(middlewareId);
-    this.outputProcessor.removeMiddleware(middlewareId);
+  public use(middleware: TerminalMiddleware): void {
+    this.processor.use(middleware);
   }
 
   public kill() {

@@ -1,12 +1,9 @@
 import * as pty from "node-pty";
-import { InputProcessor } from "./InputProcessor.js";
-import { OutputProcessor } from "./OutputProcessor.js";
+import { TerminalStreamProcessor, } from "./TerminalStreamProcessor.js";
 export class PtyManager {
     constructor() {
         this.ptyProcess = null;
-        this.inputProcessor = new InputProcessor();
-        this.outputProcessor = new OutputProcessor();
-        this.initialize();
+        this.processor = new TerminalStreamProcessor();
     }
     initialize() {
         const env = {
@@ -21,14 +18,12 @@ export class PtyManager {
             env,
         });
         process.stdin.setRawMode(true);
-        process.stdin.pipe(this.inputProcessor).pipe(this.ptyProcess);
-        this.ptyProcess.onData((data) => {
-            this.outputProcessor._transform(Buffer.from(data), "utf8", (error, transformedData) => {
-                if (!error && transformedData) {
-                    process.stdout.write(transformedData);
-                }
-            });
-        });
+        process.stdin
+            .pipe(this.processor.createInputStream())
+            .pipe(this.ptyProcess);
+        this.ptyProcess.onData(this.processor.createOutputHandler((data) => {
+            process.stdout.write(data);
+        }));
         process.stdout.on("resize", () => {
             this.ptyProcess?.resize(process.stdout.columns, process.stdout.rows);
         });
@@ -40,15 +35,8 @@ export class PtyManager {
                 ? "/bin/zsh"
                 : process.env.SHELL || "bash";
     }
-    addInputMiddleware(middleware) {
-        this.inputProcessor.addMiddleware(middleware);
-    }
-    addOutputMiddleware(middleware) {
-        this.outputProcessor.addMiddleware(middleware);
-    }
-    removeMiddleware(middlewareId) {
-        this.inputProcessor.removeMiddleware(middlewareId);
-        this.outputProcessor.removeMiddleware(middlewareId);
+    use(middleware) {
+        this.processor.use(middleware);
     }
     kill() {
         this.ptyProcess?.kill();

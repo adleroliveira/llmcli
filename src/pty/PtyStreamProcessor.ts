@@ -1,16 +1,21 @@
 import { Transform } from "stream";
-
+import {
+  TerminalActionParser,
+  TerminalAction,
+} from "./TerminalActionParser.js";
 export type StreamEvent = {
   type: "raw" | "line" | "command" | "prompt" | "error";
   content: string;
   raw: string;
   timestamp: number;
   metadata?: Record<string, any>;
+  terminalData?: TerminalAction[];
 };
 
 export type MiddlewareContext = {
   buffer: string;
   metadata: Record<string, any>;
+  parser: TerminalActionParser;
 };
 
 export type MiddlewareResult = {
@@ -19,6 +24,7 @@ export type MiddlewareResult = {
   buffer?: string;
   metadata?: Record<string, any>;
   preventDefault?: boolean;
+  terminalData?: TerminalAction[];
 };
 
 export type Middleware = {
@@ -34,9 +40,11 @@ export abstract class PtyStreamProcessor extends Transform {
   protected middlewares: Middleware[] = [];
   protected buffer: string = "";
   protected context: Record<string, any> = {};
+  protected parser: TerminalActionParser;
 
   constructor() {
     super();
+    this.parser = new TerminalActionParser();
     this.initializeEventHandlers();
   }
 
@@ -53,20 +61,30 @@ export abstract class PtyStreamProcessor extends Transform {
   protected async processWithMiddlewares(
     event: StreamEvent
   ): Promise<MiddlewareResult> {
+    const terminalData = this.parser.parse(event.raw);
+
     let result: MiddlewareResult = {
       content: event.content,
-      event,
+      event: {
+        ...event,
+        terminalData,
+      },
     };
 
     const context: MiddlewareContext = {
       buffer: this.buffer,
       metadata: {},
+      parser: this.parser,
     };
 
     for (const middleware of this.middlewares) {
       if (middleware.events.includes(event.type)) {
         const middlewareResult = await middleware.transform(
-          { ...(result.event as StreamEvent), content: result.content || "" },
+          {
+            ...(result.event as StreamEvent),
+            content: result.content || "",
+            terminalData: result.event?.terminalData,
+          },
           context
         );
 
@@ -86,6 +104,12 @@ export abstract class PtyStreamProcessor extends Transform {
           };
         }
 
+        const currentTerminalData = result.event?.terminalData || terminalData;
+        const updatedTerminalData: TerminalAction[] = {
+          ...currentTerminalData,
+          ...(middlewareResult.terminalData || []),
+        };
+
         result = {
           ...result,
           ...middlewareResult,
@@ -96,6 +120,7 @@ export abstract class PtyStreamProcessor extends Transform {
               ...result.event?.metadata,
               ...middlewareResult.event?.metadata,
             },
+            terminalData: updatedTerminalData,
           },
         };
       }

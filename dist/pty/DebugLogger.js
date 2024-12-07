@@ -4,10 +4,16 @@ export class DebugLogger {
         this.logStream = fs.createWriteStream(this.logFile, { flags: "a" });
     }
     static log(message, data) {
-        const timestamp = new Date().toISOString();
-        const logMessage = `[${timestamp}] ${message}\n`;
-        const debugData = data ? `${JSON.stringify(data, null, 2)}\n` : "";
-        this.logStream.write(logMessage + debugData);
+        // const timestamp = new Date().toISOString();
+        const logMessage = `${message}\n`;
+        const debugData = data
+            ? `${logMessage} ${JSON.stringify(data, null, 2)}\n`
+            : "";
+        // this.logStream.write(logMessage + debugData);
+        this.logStream.write(debugData);
+    }
+    static logRaw(message) {
+        this.logStream.write(message);
     }
     static close() {
         this.logStream.end();
