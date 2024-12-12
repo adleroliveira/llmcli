@@ -5,7 +5,7 @@ import {
   BaseSequence,
 } from "./Command.js";
 import { CSISequence } from "./CSISequence.js";
-import { DebugLogger } from "../DebugLogger.js";
+import { DebugLogger } from "./DebugLogger.js";
 
 export interface CursorState {
   x: number;

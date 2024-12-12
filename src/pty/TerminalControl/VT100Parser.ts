@@ -6,7 +6,7 @@ import { OSCSequence } from "./OSCSequence.js";
 import { DCSSequence } from "./DCSSequence.js";
 import { TextSequence } from "./TextSequence.js";
 import { CharsetSequence, CharsetDesignator } from "./CharsetSequence.js";
-import { DebugLogger } from "../DebugLogger.js";
+import { DebugLogger } from "./DebugLogger.js";
 
 // Parser states
 enum ParserState {

@@ -4,7 +4,7 @@ import { BedrockAgent, Tool } from "./BedrockAgent.js";
 import { SystemContentBlock } from "@aws-sdk/client-bedrock-runtime";
 import { AwsCredentials } from "./ConfigManager";
 import { processManager } from "./BackgroundProcessManager.js";
-import { DebugLogger } from "./pty/DebugLogger.js";
+import { DebugLogger } from "./pty/TerminalControl/DebugLogger.js";
 import { TerminalController } from "./pty/TerminalControl/TerminalController.js";
 DebugLogger.initialize();
 
@@ -302,8 +302,6 @@ class BedrockCLI {
       });
 
       this.displayWelcomeMessage();
-      // this.ptyManager = new PtyManager();
-      // this.ptyManager.initialize();
       this.terminalController = new TerminalController({});
     } catch (error) {
       console.error(chalk.red("Failed to initialize:"), error);

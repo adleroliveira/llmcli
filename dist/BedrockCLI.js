@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import { BedrockAgent } from "./BedrockAgent.js";
 import { processManager } from "./BackgroundProcessManager.js";
-import { DebugLogger } from "./pty/DebugLogger.js";
+import { DebugLogger } from "./pty/TerminalControl/DebugLogger.js";
 import { TerminalController } from "./pty/TerminalControl/TerminalController.js";
 DebugLogger.initialize();
 class BedrockCLI {
@@ -235,8 +235,6 @@ class BedrockCLI {
                 },
             });
             this.displayWelcomeMessage();
-            // this.ptyManager = new PtyManager();
-            // this.ptyManager.initialize();
             this.terminalController = new TerminalController({});
         }
         catch (error) {

@@ -4,7 +4,7 @@ import { VT100Parser } from "./VT100Parser.js";
 import { VT100Formatter } from "./VT100Formatter.js";
 import { CSISequence } from "./CSISequence.js";
 import { CursorStateManager } from "./CursorStateManager.js";
-import { DebugLogger } from "../DebugLogger.js";
+import { DebugLogger } from "./DebugLogger.js";
 DebugLogger.initialize({
     logFile: "pty-debug.log",
     appendToFile: true,

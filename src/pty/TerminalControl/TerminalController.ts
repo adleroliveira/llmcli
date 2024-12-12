@@ -5,7 +5,7 @@ import { VT100Formatter } from "./VT100Formatter.js";
 import { VT100Sequence, SequenceType } from "./Command.js";
 import { CSISequence } from "./CSISequence.js";
 import { CursorStateManager, CursorState } from "./CursorStateManager.js";
-import { DebugLogger } from "../DebugLogger.js";
+import { DebugLogger } from "./DebugLogger.js";
 
 DebugLogger.initialize({
   logFile: "pty-debug.log",
