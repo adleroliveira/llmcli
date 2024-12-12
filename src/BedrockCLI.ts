@@ -4,9 +4,8 @@ import { BedrockAgent, Tool } from "./BedrockAgent.js";
 import { SystemContentBlock } from "@aws-sdk/client-bedrock-runtime";
 import { AwsCredentials } from "./ConfigManager";
 import { processManager } from "./BackgroundProcessManager.js";
-import { PtyManager } from "./pty/PtyManager.js";
 import { DebugLogger } from "./pty/DebugLogger.js";
-import { createPromptDetectorMiddleware } from "./pty/middlewares/PromptMiddleware.js";
+import { TerminalController } from "./pty/TerminalControl/TerminalController.js";
 DebugLogger.initialize();
 
 interface BedrockCLIConfig {
@@ -37,7 +36,7 @@ class BedrockCLI {
   private isMessageComplete: boolean = false;
   private isProcessing: boolean = false;
   private isShowingStatus: boolean = false;
-  private ptyManager: PtyManager | null = null;
+  private terminalController: TerminalController | null = null;
 
   constructor(config: BedrockCLIConfig) {
     if (process.env.BEDROCK_CLI_RUNNING === "true") {
@@ -303,20 +302,9 @@ class BedrockCLI {
       });
 
       this.displayWelcomeMessage();
-      this.ptyManager = new PtyManager();
-      this.ptyManager.use(createPromptDetectorMiddleware());
-      // this.ptyManager.use({
-      //   // Handle mode switching on '/' input
-      //   onInput: (char: string) => {
-      //     return char;
-      //   },
-
-      //   onOutput: (command) => {
-      //     DebugLogger.log("", command);
-      //     return command;
-      //   },
-      // });
-      this.ptyManager.initialize();
+      // this.ptyManager = new PtyManager();
+      // this.ptyManager.initialize();
+      this.terminalController = new TerminalController({});
     } catch (error) {
       console.error(chalk.red("Failed to initialize:"), error);
       await this.cleanup();

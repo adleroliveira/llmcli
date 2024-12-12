@@ -1,6 +1,15 @@
 import { Transform } from "stream";
 import { TerminalParser, ParsedCommand } from "./TerminalParser.js";
-// import { DebugLogger } from "./DebugLogger.js";
+import { VT100Parser } from "./TerminalControl/VT100Parser.js";
+import { VT100Formatter } from "./TerminalControl/VT100Formatter.js";
+import { DebugLogger } from "./DebugLogger.js";
+
+DebugLogger.initialize({
+  logFile: "pty-debug.log",
+  appendToFile: true,
+  flushInterval: 2000, // 2 seconds
+  maxBufferSize: 16384, // 16KB
+});
 
 // Simplified middleware type focusing only on input/output transforms
 export type TerminalMiddleware = {
@@ -28,28 +37,26 @@ export class TerminalStreamProcessor {
     }
   }
 
-  // Process single characters from stdin
   *handleInput(chunk: string) {
-    for (const char of chunk) {
-      let processedChar = char;
+    // Process the chunk as a single unit instead of splitting it
+    let processedChunk = chunk;
 
-      // Run through input middleware
-      for (const middleware of this.inputMiddleware) {
-        if (middleware.onInput) {
-          const result = middleware.onInput(processedChar);
-          if (result === null) {
-            // Middleware consumed the character
-            processedChar = "";
-            break;
-          } else if (result) {
-            processedChar = result;
-          }
+    // Run through input middleware
+    for (const middleware of this.inputMiddleware) {
+      if (middleware.onInput) {
+        const result = middleware.onInput(processedChunk);
+        if (result === null) {
+          // Middleware consumed the chunk
+          processedChunk = "";
+          break;
+        } else if (result) {
+          processedChunk = result;
         }
       }
+    }
 
-      if (processedChar) {
-        yield processedChar;
-      }
+    if (processedChunk) {
+      yield processedChunk;
     }
   }
 
@@ -90,17 +97,19 @@ export class TerminalStreamProcessor {
   }
 
   createOutputHandler(callback: (data: string) => void) {
-    return (data: string) => {
-      // DebugLogger.logRaw(data);
-      for (const command of this.parser.parse(data)) {
-        for (const processedCommand of this.handleOutput(command)) {
-          if (processedCommand.type === "UNKNOWN") {
-            throw new Error("UNKNOWN COMMAND");
-          }
+    const vt100parser = new VT100Parser({
+      support8BitC1: true,
+      maxStringLength: 2048,
+      strictMode: true,
+    });
 
-          if (processedCommand.raw) callback(processedCommand.raw);
-        }
+    return (data: string) => {
+      for (const sequence of vt100parser.parseString(data)) {
+        // DebugLogger.log("", sequence);
+        DebugLogger.log("", VT100Formatter.format(sequence));
       }
+
+      callback(data);
     };
   }
 }

@@ -3,10 +3,12 @@ import {
   TerminalStreamProcessor,
   TerminalMiddleware,
 } from "./TerminalStreamProcessor.js";
+import { TerminalController } from "./TerminalControl/TerminalController.js";
 
 export class PtyManager {
   private ptyProcess: pty.IPty | null = null;
-  private processor = new TerminalStreamProcessor();
+  // private processor = new TerminalStreamProcessor();
+  private processor!: TerminalController;
 
   constructor() {}
 
@@ -17,27 +19,36 @@ export class PtyManager {
     };
 
     this.ptyProcess = pty.spawn(this.getShell(), [], {
-      name: "xterm-color",
+      name: "xterm-256color",
       cols: process.stdout.columns,
       rows: process.stdout.rows,
       cwd: process.cwd(),
+      encoding: null,
       env,
     });
 
-    process.stdin.setRawMode(true);
-    process.stdin
-      .pipe(this.processor.createInputStream())
-      .pipe(this.ptyProcess as any);
+    // this.processor = new TerminalController({
+    //   process,
+    //   ptyProcess: this.ptyProcess,
+    // });
 
-    this.ptyProcess.onData(
-      this.processor.createOutputHandler((data) => {
-        process.stdout.write(data);
-      })
-    );
+    // if (process.stdin.isTTY) {
+    //   process.stdin.setRawMode(true);
+    //   process.stdin.resume();
+    // }
+    // process.stdin
+    //   .pipe(this.processor.createInputStream())
+    //   .pipe(this.ptyProcess as any);
 
-    process.stdout.on("resize", () => {
-      this.ptyProcess?.resize(process.stdout.columns, process.stdout.rows);
-    });
+    // this.ptyProcess.onData(
+    //   this.processor.createOutputHandler((data) => {
+    //     process.stdout.write(data);
+    //   })
+    // );
+
+    // process.stdout.on("resize", () => {
+    //   this.ptyProcess?.resize(process.stdout.columns, process.stdout.rows);
+    // });
   }
 
   private getShell() {
@@ -49,7 +60,7 @@ export class PtyManager {
   }
 
   public use(middleware: TerminalMiddleware): void {
-    this.processor.use(middleware);
+    // this.processor.use(middleware);
   }
 
   public kill() {

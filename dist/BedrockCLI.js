@@ -1,9 +1,8 @@
 import chalk from "chalk";
 import { BedrockAgent } from "./BedrockAgent.js";
 import { processManager } from "./BackgroundProcessManager.js";
-import { PtyManager } from "./pty/PtyManager.js";
 import { DebugLogger } from "./pty/DebugLogger.js";
-import { createPromptDetectorMiddleware } from "./pty/middlewares/PromptMiddleware.js";
+import { TerminalController } from "./pty/TerminalControl/TerminalController.js";
 DebugLogger.initialize();
 class BedrockCLI {
     constructor(config) {
@@ -16,7 +15,7 @@ class BedrockCLI {
         this.isMessageComplete = false;
         this.isProcessing = false;
         this.isShowingStatus = false;
-        this.ptyManager = null;
+        this.terminalController = null;
         if (process.env.BEDROCK_CLI_RUNNING === "true") {
             throw new Error("Cannot create nested Terminal AI Assistant instance");
         }
@@ -236,19 +235,9 @@ class BedrockCLI {
                 },
             });
             this.displayWelcomeMessage();
-            this.ptyManager = new PtyManager();
-            this.ptyManager.use(createPromptDetectorMiddleware());
-            // this.ptyManager.use({
-            //   // Handle mode switching on '/' input
-            //   onInput: (char: string) => {
-            //     return char;
-            //   },
-            //   onOutput: (command) => {
-            //     DebugLogger.log("", command);
-            //     return command;
-            //   },
-            // });
-            this.ptyManager.initialize();
+            // this.ptyManager = new PtyManager();
+            // this.ptyManager.initialize();
+            this.terminalController = new TerminalController({});
         }
         catch (error) {
             console.error(chalk.red("Failed to initialize:"), error);
