@@ -9,6 +9,7 @@ import { ModeStateManager } from "./ModeStateManager.js";
 import { PromptStateManager } from "./PromptStateManager.js";
 import { LineBufferManager } from "./LineBufferManager.js";
 import { DebugLogger } from "./DebugLogger.js";
+import { init } from "./sequences/init.js";
 DebugLogger.initialize({
     logFile: "pty-debug.log",
     appendToFile: true,
@@ -40,11 +41,12 @@ export class TerminalController extends EventEmitter {
         this.on("ready", this.handleTerminalReady.bind(this));
     }
     async handleTerminalReady() {
-        await this.cursorStateManager.setup(this);
-        this.on("streamActive", (status) => {
-            if (!status)
-                DebugLogger.log("State", this.getState());
-        });
+        this.handleOutput(init);
+        process.stdout.write(init);
+        // await this.cursorStateManager.setup(this);
+        // this.on("streamActive", (status: boolean) => {
+        //   if (!status) DebugLogger.log("State", this.getState());
+        // });
     }
     getShell() {
         return process.platform === "win32"
@@ -54,12 +56,41 @@ export class TerminalController extends EventEmitter {
                 : process.env.SHELL || "bash";
     }
     setupTerminal() {
-        const shell = this.getShell();
         const cols = process.stdout.columns || 80;
         const rows = process.stdout.rows || 24;
-        // Initialize viewport state
+        this.ptyProcess = this.createPty(cols, rows);
         this.viewportStateManager.resize(cols, rows);
-        this.ptyProcess = pty.spawn(shell, [], {
+        this.ptyProcess.onData(this.handlePtyOutput.bind(this));
+        this.ptyProcess.onExit(this.handlePtyExit.bind(this));
+        process.stdin.setRawMode(true);
+        process.stdin.resume();
+        process.stdin.setEncoding("utf8");
+        process.stdin.on("data", this.handleTerminalInput.bind(this));
+        process.stdout.on("resize", this.handleTerminalResize.bind(this));
+        process.nextTick(() => this.emit("ready"));
+    }
+    handlePtyOutput(data) {
+    }
+    handleTerminalInput(data) {
+        this.setActiveStream();
+        DebugLogger.log(data);
+    }
+    handlePtyExit(exitMetada) {
+        const { exitCode } = exitMetada;
+        DebugLogger.log("PTY Exit", { exitCode });
+        process.exit(exitCode);
+    }
+    handleTerminalResize() {
+        const newCols = process.stdout.columns || 80;
+        const newRows = process.stdout.rows || 24;
+        // Resize the PTY
+        this.ptyProcess.resize(newCols, newRows);
+        this.viewportStateManager.resize(newCols, newRows);
+        this.emit("resize", { cols: newCols, rows: newRows });
+    }
+    createPty(cols, rows) {
+        const shell = this.getShell();
+        return pty.spawn(shell, [], {
             name: "xterm-256color",
             cols: cols,
             rows: rows,
@@ -68,28 +99,6 @@ export class TerminalController extends EventEmitter {
                 TERM: "xterm-256color",
             },
         });
-        // Handle PTY output
-        this.ptyProcess.onData(this.handleOutput.bind(this));
-        // Enhanced input handling
-        process.stdin.setRawMode(true);
-        process.stdin.resume();
-        process.stdin.setEncoding("utf8");
-        process.stdin.on("data", this.handleInput.bind(this));
-        // Handle resize events
-        process.stdout.on("resize", () => {
-            const newCols = process.stdout.columns || 80;
-            const newRows = process.stdout.rows || 24;
-            // Resize the PTY
-            this.ptyProcess.resize(newCols, newRows);
-            this.viewportStateManager.resize(newCols, newRows);
-            this.emit("resize", { cols: newCols, rows: newRows });
-        });
-        // Exit handling
-        this.ptyProcess.onExit(({ exitCode }) => {
-            DebugLogger.log("PTY Exit", { exitCode });
-            process.exit(exitCode);
-        });
-        process.nextTick(() => this.emit("ready"));
     }
     handleInput(data) {
         this.setActiveStream();
@@ -113,15 +122,16 @@ export class TerminalController extends EventEmitter {
         this.ptyProcess.write(data);
     }
     handleOutput(data) {
-        this.setActiveStream();
-        let outputStr = "";
+        // this.setActiveStream();
+        // let outputStr = "";
+        DebugLogger.log("Data", data);
         const sequences = this.parser.parseString(data);
         for (const sequence of sequences) {
-            const handledSequence = this.handleSequence(sequence);
-            DebugLogger.log("", VT100Formatter.format(handledSequence));
-            outputStr += handledSequence.toString();
+            // const handledSequence = this.handleSequence(sequence);
+            DebugLogger.log("", VT100Formatter.format(sequence));
+            // outputStr += handledSequence.toString();
         }
-        process.stdout.write(outputStr);
+        // process.stdout.write(outputStr);
     }
     handleSequence(sequence, skipRecursion = false) {
         // Update all state managers except prompt

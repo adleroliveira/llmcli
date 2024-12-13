@@ -3,6 +3,7 @@ import { VT100Sequence, ControlCharacter, SequenceType } from "./Command.js";
 // This helps with type checking and documentation
 export var SimpleEscapeCommand;
 (function (SimpleEscapeCommand) {
+    // Existing commands
     SimpleEscapeCommand["RIS"] = "c";
     SimpleEscapeCommand["DECSC"] = "7";
     SimpleEscapeCommand["DECRC"] = "8";
@@ -14,6 +15,28 @@ export var SimpleEscapeCommand;
     SimpleEscapeCommand["SS3"] = "O";
     SimpleEscapeCommand["DECPAM"] = "=";
     SimpleEscapeCommand["DECPNM"] = ">";
+    // Additional commands
+    SimpleEscapeCommand["DECALN"] = "8";
+    SimpleEscapeCommand["DECKPAM"] = "=";
+    SimpleEscapeCommand["DECKPNM"] = ">";
+    // Tab control
+    SimpleEscapeCommand["DECTBC"] = "0";
+    SimpleEscapeCommand["DECSWL"] = "3";
+    SimpleEscapeCommand["DECDWL"] = "4";
+    SimpleEscapeCommand["DECHDL"] = "3";
+    SimpleEscapeCommand["DECHDBL"] = "4";
+    // Character set selection
+    SimpleEscapeCommand["SCS0"] = "(";
+    SimpleEscapeCommand["SCS1"] = ")";
+    SimpleEscapeCommand["SCS2"] = "*";
+    SimpleEscapeCommand["SCS3"] = "+";
+    // Memory operations
+    SimpleEscapeCommand["DECBI"] = "6";
+    SimpleEscapeCommand["DECFI"] = "9";
+    // Line feed mode
+    SimpleEscapeCommand["DECNM"] = "~";
+    // VT52 compatibility mode
+    SimpleEscapeCommand["DECVT52"] = "<";
 })(SimpleEscapeCommand || (SimpleEscapeCommand = {}));
 export class SimpleEscapeSequence extends VT100Sequence {
     constructor(raw, finalByte) {

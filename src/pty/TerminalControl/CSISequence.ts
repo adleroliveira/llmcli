@@ -7,10 +7,138 @@ import {
   SequenceType,
 } from "./Command.js";
 
+export enum CSICommand {
+  // Cursor commands
+  CUU = "A", // Cursor Up
+  CUD = "B", // Cursor Down
+  CUF = "C", // Cursor Forward
+  CUB = "D", // Cursor Back
+  CNL = "E", // Cursor Next Line
+  CPL = "F", // Cursor Previous Line
+  CHA = "G", // Cursor Horizontal Absolute
+  CUP = "H", // Cursor Position
+  VPA = "d", // Vertical Position Absolute
+  CHT = "I", // Cursor Forward Tabulation
+  CBT = "Z", // Cursor Backward Tabulation
+  DSR = "n", // Device Status Report (used for cursor position reporting)
+
+  // Erase commands
+  ED = "J", // Erase in Display
+  EL = "K", // Erase in Line
+
+  // Screen commands
+  SU = "S", // Scroll Up
+  SD = "T", // Scroll Down
+  DECSTBM = "r", // Set Scrolling Region
+
+  // Mode commands
+  SM = "h", // Set Mode
+  RM = "l", // Reset Mode
+
+  // Other commands
+  SGR = "m", // Select Graphic Rendition
+  SCOSC = "s", // Save Cursor Position
+  SCORC = "u", // Restore Cursor Position
+
+  // Window commands
+  XTWINOPS = "t", // Window Manipulation
+
+  // Erase/Delete commands
+  DCH = "P", // Delete Character
+  DL = "M",  // Delete Line
+  ICH = "@", // Insert Character
+  IL = "L",  // Insert Line
+
+  // Screen commands
+  DECSLRM = "s", // Set Left and Right Margins
+  DECALN = "#8", // Screen Alignment Pattern
+}
+
+export enum SGRAttribute {
+  Reset = 0,
+  Bold = 1,
+  Dim = 2,
+  Italic = 3,
+  Underline = 4,
+  BlinkSlow = 5,
+  BlinkRapid = 6,
+  Inverse = 7,
+  Hidden = 8,
+  StrikeThrough = 9,
+
+  // Reset individual attributes
+  BoldOff = 22,
+  ItalicOff = 23,
+  UnderlineOff = 24,
+  BlinkOff = 25,
+  InverseOff = 27,
+  StrikeThroughOff = 29,
+}
+
+// Standard 16-color support
+export enum SGRColor {
+  // Foreground colors
+  Black = 30,
+  Red = 31,
+  Green = 32,
+  Yellow = 33,
+  Blue = 34,
+  Magenta = 35,
+  Cyan = 36,
+  White = 37,
+  Default = 39,
+
+  // Background colors
+  BgBlack = 40,
+  BgRed = 41,
+  BgGreen = 42,
+  BgYellow = 43,
+  BgBlue = 44,
+  BgMagenta = 45,
+  BgCyan = 46,
+  BgWhite = 47,
+  BgDefault = 49,
+
+  // Bright foreground colors
+  BrightBlack = 90,
+  BrightRed = 91,
+  BrightGreen = 92,
+  BrightYellow = 93,
+  BrightBlue = 94,
+  BrightMagenta = 95,
+  BrightCyan = 96,
+  BrightWhite = 97,
+
+  // Bright background colors
+  BgBrightBlack = 100,
+  BgBrightRed = 101,
+  BgBrightGreen = 102,
+  BgBrightYellow = 103,
+  BgBrightBlue = 104,
+  BgBrightMagenta = 105,
+  BgBrightCyan = 106,
+  BgBrightWhite = 107,
+}
+
+export class TextFormatter {
+  private static createSGR(...params: number[]): string {
+    return CSISequence.create(CSICommand.SGR, params).toString();
+  }
+
+  static rgb(r: number, g: number, b: number, isBackground = false): string {
+    const prefix = isBackground ? 48 : 38;
+    return this.createSGR(prefix, 2, r, g, b);
+  }
+
+  static color256(code: number, isBackground = false): string {
+    const prefix = isBackground ? 48 : 38;
+    return this.createSGR(prefix, 5, code);
+  }
+}
+
 export class CSISequence
   extends VT100Sequence
-  implements ParameterizedSequence, IntermediateBytes
-{
+  implements ParameterizedSequence, IntermediateBytes {
   constructor(
     raw: Uint8Array,
     public readonly parameters: Parameter[],
@@ -18,6 +146,50 @@ export class CSISequence
     public readonly finalByte: number
   ) {
     super(SequenceType.CSI, ControlCharacter.CSI, raw);
+  }
+
+  static create(
+    command: CSICommand,
+    params: (number | null)[] = [],
+    isPrivate: boolean = false
+  ): CSISequence {
+    // Convert params to Parameter array
+    const parameters: Parameter[] = params.map(value => ({
+      value,
+      private: isPrivate
+    }));
+
+    // Build the raw byte sequence
+    const bytes: number[] = [];
+
+    // Add parameter bytes
+    if (isPrivate) {
+      bytes.push(0x3f); // '?'
+    }
+
+    // Add parameter values and separators
+    parameters.forEach((param, index) => {
+      if (index > 0) {
+        bytes.push(0x3b); // ';'
+      }
+      if (param.value !== null) {
+        const paramStr = param.value.toString();
+        for (const char of paramStr) {
+          bytes.push(char.charCodeAt(0));
+        }
+      }
+    });
+
+    // Add final byte
+    bytes.push(command.charCodeAt(0));
+
+    // Create the sequence
+    return new CSISequence(
+      new Uint8Array(bytes),
+      parameters,
+      [], // No intermediate bytes
+      command.charCodeAt(0)
+    );
   }
 
   isValid(): boolean {

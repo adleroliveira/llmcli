@@ -1,10 +1,155 @@
 import { VT100Sequence, ControlCharacter, SequenceType, } from "./Command.js";
+export var CSICommand;
+(function (CSICommand) {
+    // Cursor commands
+    CSICommand["CUU"] = "A";
+    CSICommand["CUD"] = "B";
+    CSICommand["CUF"] = "C";
+    CSICommand["CUB"] = "D";
+    CSICommand["CNL"] = "E";
+    CSICommand["CPL"] = "F";
+    CSICommand["CHA"] = "G";
+    CSICommand["CUP"] = "H";
+    CSICommand["VPA"] = "d";
+    CSICommand["CHT"] = "I";
+    CSICommand["CBT"] = "Z";
+    CSICommand["DSR"] = "n";
+    // Erase commands
+    CSICommand["ED"] = "J";
+    CSICommand["EL"] = "K";
+    // Screen commands
+    CSICommand["SU"] = "S";
+    CSICommand["SD"] = "T";
+    CSICommand["DECSTBM"] = "r";
+    // Mode commands
+    CSICommand["SM"] = "h";
+    CSICommand["RM"] = "l";
+    // Other commands
+    CSICommand["SGR"] = "m";
+    CSICommand["SCOSC"] = "s";
+    CSICommand["SCORC"] = "u";
+    // Window commands
+    CSICommand["XTWINOPS"] = "t";
+    // Erase/Delete commands
+    CSICommand["DCH"] = "P";
+    CSICommand["DL"] = "M";
+    CSICommand["ICH"] = "@";
+    CSICommand["IL"] = "L";
+    // Screen commands
+    CSICommand["DECSLRM"] = "s";
+    CSICommand["DECALN"] = "#8";
+})(CSICommand || (CSICommand = {}));
+export var SGRAttribute;
+(function (SGRAttribute) {
+    SGRAttribute[SGRAttribute["Reset"] = 0] = "Reset";
+    SGRAttribute[SGRAttribute["Bold"] = 1] = "Bold";
+    SGRAttribute[SGRAttribute["Dim"] = 2] = "Dim";
+    SGRAttribute[SGRAttribute["Italic"] = 3] = "Italic";
+    SGRAttribute[SGRAttribute["Underline"] = 4] = "Underline";
+    SGRAttribute[SGRAttribute["BlinkSlow"] = 5] = "BlinkSlow";
+    SGRAttribute[SGRAttribute["BlinkRapid"] = 6] = "BlinkRapid";
+    SGRAttribute[SGRAttribute["Inverse"] = 7] = "Inverse";
+    SGRAttribute[SGRAttribute["Hidden"] = 8] = "Hidden";
+    SGRAttribute[SGRAttribute["StrikeThrough"] = 9] = "StrikeThrough";
+    // Reset individual attributes
+    SGRAttribute[SGRAttribute["BoldOff"] = 22] = "BoldOff";
+    SGRAttribute[SGRAttribute["ItalicOff"] = 23] = "ItalicOff";
+    SGRAttribute[SGRAttribute["UnderlineOff"] = 24] = "UnderlineOff";
+    SGRAttribute[SGRAttribute["BlinkOff"] = 25] = "BlinkOff";
+    SGRAttribute[SGRAttribute["InverseOff"] = 27] = "InverseOff";
+    SGRAttribute[SGRAttribute["StrikeThroughOff"] = 29] = "StrikeThroughOff";
+})(SGRAttribute || (SGRAttribute = {}));
+// Standard 16-color support
+export var SGRColor;
+(function (SGRColor) {
+    // Foreground colors
+    SGRColor[SGRColor["Black"] = 30] = "Black";
+    SGRColor[SGRColor["Red"] = 31] = "Red";
+    SGRColor[SGRColor["Green"] = 32] = "Green";
+    SGRColor[SGRColor["Yellow"] = 33] = "Yellow";
+    SGRColor[SGRColor["Blue"] = 34] = "Blue";
+    SGRColor[SGRColor["Magenta"] = 35] = "Magenta";
+    SGRColor[SGRColor["Cyan"] = 36] = "Cyan";
+    SGRColor[SGRColor["White"] = 37] = "White";
+    SGRColor[SGRColor["Default"] = 39] = "Default";
+    // Background colors
+    SGRColor[SGRColor["BgBlack"] = 40] = "BgBlack";
+    SGRColor[SGRColor["BgRed"] = 41] = "BgRed";
+    SGRColor[SGRColor["BgGreen"] = 42] = "BgGreen";
+    SGRColor[SGRColor["BgYellow"] = 43] = "BgYellow";
+    SGRColor[SGRColor["BgBlue"] = 44] = "BgBlue";
+    SGRColor[SGRColor["BgMagenta"] = 45] = "BgMagenta";
+    SGRColor[SGRColor["BgCyan"] = 46] = "BgCyan";
+    SGRColor[SGRColor["BgWhite"] = 47] = "BgWhite";
+    SGRColor[SGRColor["BgDefault"] = 49] = "BgDefault";
+    // Bright foreground colors
+    SGRColor[SGRColor["BrightBlack"] = 90] = "BrightBlack";
+    SGRColor[SGRColor["BrightRed"] = 91] = "BrightRed";
+    SGRColor[SGRColor["BrightGreen"] = 92] = "BrightGreen";
+    SGRColor[SGRColor["BrightYellow"] = 93] = "BrightYellow";
+    SGRColor[SGRColor["BrightBlue"] = 94] = "BrightBlue";
+    SGRColor[SGRColor["BrightMagenta"] = 95] = "BrightMagenta";
+    SGRColor[SGRColor["BrightCyan"] = 96] = "BrightCyan";
+    SGRColor[SGRColor["BrightWhite"] = 97] = "BrightWhite";
+    // Bright background colors
+    SGRColor[SGRColor["BgBrightBlack"] = 100] = "BgBrightBlack";
+    SGRColor[SGRColor["BgBrightRed"] = 101] = "BgBrightRed";
+    SGRColor[SGRColor["BgBrightGreen"] = 102] = "BgBrightGreen";
+    SGRColor[SGRColor["BgBrightYellow"] = 103] = "BgBrightYellow";
+    SGRColor[SGRColor["BgBrightBlue"] = 104] = "BgBrightBlue";
+    SGRColor[SGRColor["BgBrightMagenta"] = 105] = "BgBrightMagenta";
+    SGRColor[SGRColor["BgBrightCyan"] = 106] = "BgBrightCyan";
+    SGRColor[SGRColor["BgBrightWhite"] = 107] = "BgBrightWhite";
+})(SGRColor || (SGRColor = {}));
+export class TextFormatter {
+    static createSGR(...params) {
+        return CSISequence.create(CSICommand.SGR, params).toString();
+    }
+    static rgb(r, g, b, isBackground = false) {
+        const prefix = isBackground ? 48 : 38;
+        return this.createSGR(prefix, 2, r, g, b);
+    }
+    static color256(code, isBackground = false) {
+        const prefix = isBackground ? 48 : 38;
+        return this.createSGR(prefix, 5, code);
+    }
+}
 export class CSISequence extends VT100Sequence {
     constructor(raw, parameters, intermediateBytes, finalByte) {
         super(SequenceType.CSI, ControlCharacter.CSI, raw);
         this.parameters = parameters;
         this.intermediateBytes = intermediateBytes;
         this.finalByte = finalByte;
+    }
+    static create(command, params = [], isPrivate = false) {
+        // Convert params to Parameter array
+        const parameters = params.map(value => ({
+            value,
+            private: isPrivate
+        }));
+        // Build the raw byte sequence
+        const bytes = [];
+        // Add parameter bytes
+        if (isPrivate) {
+            bytes.push(0x3f); // '?'
+        }
+        // Add parameter values and separators
+        parameters.forEach((param, index) => {
+            if (index > 0) {
+                bytes.push(0x3b); // ';'
+            }
+            if (param.value !== null) {
+                const paramStr = param.value.toString();
+                for (const char of paramStr) {
+                    bytes.push(char.charCodeAt(0));
+                }
+            }
+        });
+        // Add final byte
+        bytes.push(command.charCodeAt(0));
+        // Create the sequence
+        return new CSISequence(new Uint8Array(bytes), parameters, [], // No intermediate bytes
+        command.charCodeAt(0));
     }
     isValid() {
         return (this.isFinalByte(this.finalByte) &&
