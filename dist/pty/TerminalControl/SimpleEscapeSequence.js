@@ -1,7 +1,7 @@
 import { VT100Sequence, ControlCharacter, SequenceType } from "./Command.js";
 // Enum for common simple escape sequences final bytes
 // This helps with type checking and documentation
-var SimpleEscapeCommand;
+export var SimpleEscapeCommand;
 (function (SimpleEscapeCommand) {
     SimpleEscapeCommand["RIS"] = "c";
     SimpleEscapeCommand["DECSC"] = "7";
@@ -55,5 +55,36 @@ export class SimpleEscapeSequence extends VT100Sequence {
     // Static helper to create common sequences
     static create(command) {
         return new SimpleEscapeSequence(new Uint8Array([ControlCharacter.ESC, command.charCodeAt(0)]), command.charCodeAt(0));
+    }
+    // Create from raw bytes
+    static from(bytes) {
+        if (bytes.length < 2) {
+            throw new Error("Invalid Simple Escape sequence: too short");
+        }
+        if (bytes[0] !== ControlCharacter.ESC) {
+            throw new Error("Invalid Simple Escape sequence: must start with ESC");
+        }
+        // For simple escape sequences, the second byte is the final byte
+        const finalByte = bytes[1];
+        // Create new instance
+        const sequence = new SimpleEscapeSequence(bytes, finalByte);
+        if (!sequence.isValid()) {
+            throw new Error("Invalid Simple Escape sequence: validation failed");
+        }
+        return sequence;
+    }
+    // Create from string representation
+    static fromStr(text) {
+        // Verify the string starts with ESC
+        if (!text.startsWith("\x1B")) {
+            throw new Error("Invalid Simple Escape sequence string: must start with ESC");
+        }
+        // For simple escape sequences, we expect exactly two characters: ESC + final byte
+        if (text.length !== 2) {
+            throw new Error("Invalid Simple Escape sequence string: incorrect length");
+        }
+        // Convert to bytes
+        const bytes = new Uint8Array([ControlCharacter.ESC, text.charCodeAt(1)]);
+        return this.from(bytes);
     }
 }

@@ -7,6 +7,11 @@ export class TextSequence extends VT100Sequence {
         this.type = SequenceType.TEXT;
         this.controlChar = ControlCharacter.NUL; // or perhaps undefined
     }
+    static fromStr(text) {
+        const encoder = new TextEncoder();
+        const raw = encoder.encode(text);
+        return new TextSequence(raw, text);
+    }
     isValid() {
         return true;
     }

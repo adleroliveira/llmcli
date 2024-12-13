@@ -2,9 +2,13 @@ import { EventEmitter } from "events";
 import * as pty from "node-pty";
 import { VT100Parser } from "./VT100Parser.js";
 import { VT100Formatter } from "./VT100Formatter.js";
-import { VT100Sequence, SequenceType } from "./Command.js";
-import { CSISequence } from "./CSISequence.js";
+import { VT100Sequence } from "./Command.js";
 import { CursorStateManager, CursorState } from "./CursorStateManager.js";
+import { ViewportStateManager, ViewportState } from "./ViewportStateManager.js";
+import { CharsetStateManager, CharsetState } from "./CharsetStateManager.js";
+import { ModeStateManager, ModeState } from "./ModeStateManager.js";
+import { PromptStateManager } from "./PromptStateManager.js";
+import { LineBufferManager, LineBufferState } from "./LineBufferManager.js";
 import { DebugLogger } from "./DebugLogger.js";
 
 DebugLogger.initialize({
@@ -20,6 +24,7 @@ export interface TerminalControllerConfig {
   strictMode?: boolean;
   debug?: boolean;
   responseTimeout?: number;
+  activeStreamTimeout?: number;
 }
 
 interface SequenceResponseHandler {
@@ -30,73 +35,54 @@ interface SequenceResponseHandler {
   timer: NodeJS.Timeout;
 }
 
-// Current text attributes
-interface TextAttributes {
-  bold: boolean;
-  dim: boolean;
-  italic: boolean;
-  underline: boolean;
-  blink: boolean;
-  inverse: boolean;
-  hidden: boolean;
-  strike: boolean;
-  foreground?: number;
-  background?: number;
-}
-
-// Minimal screen buffer line
-interface BufferLine {
-  content: string;
-  attributes: TextAttributes;
-}
-
 // Terminal state interface
 interface TerminalState {
-  attributes: TextAttributes;
-  buffer: BufferLine[];
-  modes: {
-    applicationCursor: boolean;
-    applicationKeypad: boolean;
-    wrap: boolean;
-    insert: boolean;
-    originMode: boolean;
-    autoWrap: boolean;
-    bracketedPaste: boolean;
-    mouseTracking: boolean;
-  };
-  viewport: {
-    width: number;
-    height: number;
-    scrollTop: number;
-    scrollBottom: number;
-  };
-  charset: {
-    current: number;
-    g0: number;
-    g1: number;
-  };
+  cursor: CursorState;
+  viewport: ViewportState;
+  charset: CharsetState;
+  mode: ModeState;
+  lineBuffer: LineBufferState;
 }
 
 export declare interface TerminalController {
   on(event: "ready", listener: () => void): this;
   on(event: "command", listener: (command: string) => void): this;
   on(event: "text", listener: (text: string) => void): this;
+  on(event: "resize", listener: () => void): this;
+  on(event: "streamActive", listener: (status: boolean) => void): this;
 }
+
+const DEFATUL_STREAM_ACTIVE_TIMEOUT = 500;
 
 export class TerminalController extends EventEmitter {
   private config: TerminalControllerConfig;
   private parser: VT100Parser;
-  private state: TerminalState;
+
+  // State Management
   private cursorStateManager: CursorStateManager;
+  private viewportStateManager: ViewportStateManager;
+  private charsetStateManager: CharsetStateManager;
+  private modeStateManager: ModeStateManager;
+  private lineBufferManager: LineBufferManager;
+  private promptStateManager: PromptStateManager;
+
   private ptyProcess!: pty.IPty;
   private responseHandlers: SequenceResponseHandler[];
   private responseBuffer: string;
   private defaultTimeout: number;
+  private streamActive: boolean = false;
+  private streamActiveTimer: NodeJS.Timeout | null = null;
 
   constructor(config: TerminalControllerConfig) {
     super();
-    this.cursorStateManager = new CursorStateManager();
-    this.state = this.createInitialState();
+
+    this.viewportStateManager = new ViewportStateManager(this);
+    this.cursorStateManager = new CursorStateManager(this);
+    this.lineBufferManager = new LineBufferManager(this);
+    this.charsetStateManager = new CharsetStateManager();
+    this.modeStateManager = new ModeStateManager();
+    this.promptStateManager = new PromptStateManager(this, "[⚡]");
+
     this.config = config;
     this.responseHandlers = [];
     this.responseBuffer = "";
@@ -112,45 +98,11 @@ export class TerminalController extends EventEmitter {
     this.on("ready", this.handleTerminalReady.bind(this));
   }
 
-  private createInitialState(): TerminalState {
-    return {
-      attributes: {
-        bold: false,
-        dim: false,
-        italic: false,
-        underline: false,
-        blink: false,
-        inverse: false,
-        hidden: false,
-        strike: false,
-      },
-      buffer: [],
-      modes: {
-        applicationCursor: false,
-        applicationKeypad: false,
-        wrap: true,
-        insert: false,
-        originMode: false,
-        autoWrap: true,
-        bracketedPaste: false,
-        mouseTracking: false,
-      },
-      viewport: {
-        width: 80, // Default terminal width
-        height: 24, // Default terminal height
-        scrollTop: 0,
-        scrollBottom: 23, // height - 1
-      },
-      charset: {
-        current: 0,
-        g0: 0,
-        g1: 0,
-      },
-    };
-  }
-
   private async handleTerminalReady() {
-    await this.setCursorPosition();
+    await this.cursorStateManager.setup(this);
+    this.on("streamActive", (status: boolean) => {
+      if (!status) DebugLogger.log("State", this.getState());
+    });
   }
 
   private getShell() {
@@ -165,6 +117,9 @@ export class TerminalController extends EventEmitter {
     const shell = this.getShell();
     const cols = process.stdout.columns || 80;
     const rows = process.stdout.rows || 24;
+
+    // Initialize viewport state
+    this.viewportStateManager.resize(cols, rows);
 
     this.ptyProcess = pty.spawn(shell, [], {
       name: "xterm-256color",
@@ -183,7 +138,6 @@ export class TerminalController extends EventEmitter {
     process.stdin.setRawMode(true);
     process.stdin.resume();
     process.stdin.setEncoding("utf8");
-
     process.stdin.on("data", this.handleInput.bind(this));
 
     // Handle resize events
@@ -193,11 +147,7 @@ export class TerminalController extends EventEmitter {
 
       // Resize the PTY
       this.ptyProcess.resize(newCols, newRows);
-
-      this.state.viewport.width = newCols;
-      this.state.viewport.height = newRows;
-      this.state.viewport.scrollBottom = newRows - 1;
-
+      this.viewportStateManager.resize(newCols, newRows);
       this.emit("resize", { cols: newCols, rows: newRows });
     });
 
@@ -207,14 +157,11 @@ export class TerminalController extends EventEmitter {
       process.exit(exitCode);
     });
 
-    // Initialize viewport state
-    this.state.viewport.width = cols;
-    this.state.viewport.height = rows;
-    this.state.viewport.scrollBottom = rows - 1;
     process.nextTick(() => this.emit("ready"));
   }
 
   private handleInput(data: string): void {
+    this.setActiveStream();
     // Check for pending response handlers
     if (this.responseHandlers.length > 0) {
       this.responseBuffer += data.toString();
@@ -225,19 +172,11 @@ export class TerminalController extends EventEmitter {
         const match = this.responseBuffer.match(handler.pattern);
 
         if (match) {
-          // Clear the timeout
           clearTimeout(handler.timer);
-
-          // Remove the handler
           this.responseHandlers.splice(i, 1);
-
-          // Process the match
           handler.resolve(match);
-
-          // Remove the matched portion from the buffer
           this.responseBuffer = this.responseBuffer.slice(match[0].length);
 
-          // Don't forward this to PTY
           return;
         }
       }
@@ -247,25 +186,44 @@ export class TerminalController extends EventEmitter {
   }
 
   private handleOutput(data: string) {
-    let outpuStr = "";
+    this.setActiveStream();
+    let outputStr = "";
     const sequences = this.parser.parseString(data);
+
     for (const sequence of sequences) {
-      const transformedSequences = this.handleSequence(sequence);
-      transformedSequences.forEach((seq) => {
-        DebugLogger.log("", VT100Formatter.format(seq));
-        outpuStr += seq.toString();
-      });
+      const handledSequence = this.handleSequence(sequence);
+      DebugLogger.log("", VT100Formatter.format(handledSequence));
+      outputStr += handledSequence.toString();
     }
-    process.stdout.write(outpuStr);
+
+    process.stdout.write(outputStr);
   }
 
-  private handleSequence(sequence: VT100Sequence): VT100Sequence[] {
-    // Update cursor state
+  private handleSequence(
+    sequence: VT100Sequence,
+    skipRecursion: boolean = false
+  ): VT100Sequence {
+    // Update all state managers except prompt
+    this.charsetStateManager.processSequence(sequence);
+    this.modeStateManager.processSequence(sequence);
+    this.viewportStateManager.processSequence(sequence);
     this.cursorStateManager.processSequence(sequence);
+    this.lineBufferManager.processSequence(sequence);
 
-    // Emit sequence event for external handlers
-    this.emit("sequence", sequence);
-    return [sequence];
+    // if (!skipRecursion) {
+    //   const transformedSequence =
+    //     this.promptStateManager.processSequence(sequence);
+    //   if (transformedSequence !== sequence) {
+    //     return this.handleSequence(transformedSequence, true);
+    //   }
+    // }
+
+    return sequence;
+  }
+
+  public sendSequence(sequence: VT100Sequence): void {
+    this.setActiveStream();
+    process.stdout.write(sequence.toString());
   }
 
   public async sendSequenceWithResponse(
@@ -296,15 +254,42 @@ export class TerminalController extends EventEmitter {
     });
   }
 
-  private async setCursorPosition() {
-    const dsr = CSISequence.from(new Uint8Array([0x1b, 0x5b, 0x36, 0x6e])); // ESC [ 6 n
-    const response = await this.sendSequenceWithResponse(
-      dsr,
-      /\x1b\[(\d+);(\d+)R/
-    );
+  private setActiveStream() {
+    if (!this.streamActive) {
+      this.streamActive = true;
+      this.emit("streamActive", true);
+    }
+    if (this.streamActiveTimer) clearTimeout(this.streamActiveTimer);
+    this.streamActiveTimer = setTimeout(() => {
+      this.streamActive = false;
+      this.emit("streamActive", false);
+      this.streamActiveTimer = null;
+    }, this.config.activeStreamTimeout || DEFATUL_STREAM_ACTIVE_TIMEOUT);
+  }
 
-    const y = parseInt(response[1], 10);
-    const x = parseInt(response[2], 10);
-    this.cursorStateManager.setPosition(x, y);
+  public getState(): TerminalState {
+    return {
+      cursor: this.cursorStateManager.getState(),
+      viewport: this.viewportStateManager.getState(),
+      charset: this.charsetStateManager.getState(),
+      mode: this.modeStateManager.getState(),
+      lineBuffer: this.lineBufferManager.getState(),
+    };
+  }
+
+  public getViewPortStateManager(): ViewportStateManager {
+    return this.viewportStateManager;
+  }
+
+  public getCursorStateManager(): CursorStateManager {
+    return this.cursorStateManager;
+  }
+
+  public getLineBufferManager(): LineBufferManager {
+    return this.lineBufferManager;
+  }
+
+  public getPromptStateManager(): PromptStateManager {
+    return this.promptStateManager;
   }
 }

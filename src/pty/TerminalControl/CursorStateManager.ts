@@ -1,11 +1,7 @@
-import {
-  VT100Sequence,
-  ControlCharacter,
-  SequenceType,
-  BaseSequence,
-} from "./Command.js";
+import { VT100Sequence, ControlCharacter, SequenceType } from "./Command.js";
 import { CSISequence } from "./CSISequence.js";
-import { DebugLogger } from "./DebugLogger.js";
+import { TerminalController } from "./TerminalController.js";
+import { ViewportStateManager } from "./ViewportStateManager.js";
 
 export interface CursorState {
   x: number;
@@ -24,15 +20,23 @@ export class CursorStateManager {
     isSaved: false,
   };
 
+  private terminalController: TerminalController;
+  private viewport: ViewportStateManager;
+
   private maxX: number = Infinity;
   private maxY: number = Infinity;
+
+  constructor(controller: TerminalController) {
+    this.terminalController = controller;
+    this.viewport = controller.getViewPortStateManager();
+  }
 
   // Get current cursor state
   public getState(): CursorState {
     return { ...this.state };
   }
 
-  public processSequence(sequence: BaseSequence | VT100Sequence): void {
+  public processSequence(sequence: VT100Sequence): void {
     if (sequence instanceof CSISequence) {
       if (CSISequence.isCursorCommand(sequence)) {
         this.processCursorCommand(sequence);
@@ -58,8 +62,26 @@ export class CursorStateManager {
           break;
       }
     }
-
     this.enforceBounds();
+  }
+
+  private handleLineFeed(): void {
+    const viewportState = this.viewport.getState();
+    const isInScrollRegion =
+      this.state.y >= viewportState.scrollTop &&
+      this.state.y <= viewportState.scrollBottom;
+
+    if (isInScrollRegion) {
+      if (this.state.y < viewportState.scrollBottom) {
+        this.state.y++;
+      }
+      // If at scroll bottom, terminal will scroll content up instead of moving cursor
+    } else {
+      // Outside scroll region, move cursor if possible
+      if (this.state.y < viewportState.height - 1) {
+        this.state.y++;
+      }
+    }
   }
 
   private handleEraseDisplay(mode: number): void {
@@ -90,19 +112,43 @@ export class CursorStateManager {
   }
 
   private processText(text: string): void {
+    const terminalState = this.terminalController.getState();
+    const viewportState = terminalState.viewport;
+    const terminalMode = terminalState.mode;
+    const shouldAutoWrap = terminalMode.autoWrap;
+
     for (const char of text) {
+      // Handle backspace separately
+      if (char === "\b") {
+        if (this.state.x > 0) {
+          this.state.x--;
+        }
+        continue;
+      }
+
       switch (char) {
         case "\r":
           this.state.x = 0;
           break;
+
         case "\n":
-          this.state.y++;
+          this.handleLineFeed();
           break;
+
         default:
-          this.state.x++;
-          if (this.maxX !== Infinity && this.state.x > this.maxX) {
+          // Only increment x if we're not already at the edge
+          if (this.state.x < viewportState.width) {
+            this.state.x++;
+          }
+
+          // Handle auto-wrap behavior
+          if (shouldAutoWrap && this.state.x >= viewportState.width) {
             this.state.x = 0;
-            this.state.y++;
+            // Only trigger line feed if we're actually wrapping content
+            // and not just hitting the edge with spaces
+            if (char !== " ") {
+              this.handleLineFeed();
+            }
           }
       }
     }
@@ -117,10 +163,11 @@ export class CursorStateManager {
         break;
 
       case ControlCharacter.HT:
+        const viewportState = this.viewport.getState();
         const nextTab = this.state.x + (8 - (this.state.x % 8));
-        if (this.maxX !== Infinity && nextTab > this.maxX) {
+        if (nextTab >= viewportState.width) {
           this.state.x = 0;
-          this.state.y++;
+          this.handleLineFeed();
         } else {
           this.state.x = nextTab;
         }
@@ -129,7 +176,7 @@ export class CursorStateManager {
       case ControlCharacter.LF:
       case ControlCharacter.VT:
       case ControlCharacter.FF:
-        this.state.y++;
+        this.handleLineFeed();
         break;
 
       case ControlCharacter.CR:
@@ -137,13 +184,14 @@ export class CursorStateManager {
         break;
 
       case ControlCharacter.NEL:
-        this.state.y++;
+        this.handleLineFeed();
         this.state.x = 0;
         break;
     }
   }
 
   private processCursorCommand(sequence: CSISequence): void {
+    const viewportState = this.viewport.getState();
     const finalByte = sequence.finalByte;
     const param = sequence.parameters[0]?.value ?? 1;
     const param2 = sequence.parameters[1]?.value ?? 1;
@@ -154,11 +202,11 @@ export class CursorStateManager {
         break;
 
       case 0x42: // 'B' - Cursor Down
-        this.state.y += param;
+        this.state.y = Math.min(viewportState.height - 1, this.state.y + param);
         break;
 
       case 0x43: // 'C' - Cursor Forward
-        this.state.x += param;
+        this.state.x = Math.min(viewportState.width - 1, this.state.x + param);
         break;
 
       case 0x44: // 'D' - Cursor Back
@@ -166,7 +214,7 @@ export class CursorStateManager {
         break;
 
       case 0x45: // 'E' - Cursor Next Line
-        this.state.y += param;
+        this.state.y = Math.min(viewportState.height - 1, this.state.y + param);
         this.state.x = 0;
         break;
 
@@ -176,12 +224,21 @@ export class CursorStateManager {
         break;
 
       case 0x47: // 'G' - Cursor Horizontal Absolute
-        this.state.x = Math.max(0, param - 1);
+        this.state.x = Math.min(
+          viewportState.width - 1,
+          Math.max(0, param - 1)
+        );
         break;
 
       case 0x48: // 'H' - Cursor Position
-        this.state.y = Math.max(0, param - 1);
-        this.state.x = Math.max(0, param2 - 1);
+        this.state.y = Math.min(
+          viewportState.height - 1,
+          Math.max(0, param - 1)
+        );
+        this.state.x = Math.min(
+          viewportState.width - 1,
+          Math.max(0, param2 - 1)
+        );
         break;
 
       case 0x73: // 's' - Save Cursor Position
@@ -196,32 +253,40 @@ export class CursorStateManager {
           this.state.savedX !== undefined &&
           this.state.savedY !== undefined
         ) {
-          this.state.x = this.state.savedX;
-          this.state.y = this.state.savedY;
+          this.state.x = Math.min(viewportState.width - 1, this.state.savedX);
+          this.state.y = Math.min(viewportState.height - 1, this.state.savedY);
         }
         break;
     }
   }
 
-  private enforceBounds(): void {
-    if (this.maxX !== Infinity) {
-      // Handle horizontal wrap-around
-      while (this.state.x > this.maxX) {
-        this.state.x -= this.maxX + 1;
+  public enforceBounds(): void {
+    const viewportState = this.viewport.getState();
+    // Get effective maximum bounds (minimum of explicit bounds and viewport dimensions)
+    const effectiveMaxX =
+      this.maxX !== Infinity
+        ? Math.min(this.maxX, viewportState.width - 1)
+        : viewportState.width - 1;
+
+    const effectiveMaxY =
+      this.maxY !== Infinity
+        ? Math.min(this.maxY, viewportState.height - 1)
+        : viewportState.height - 1;
+
+    // Handle horizontal wrap-around
+    while (this.state.x > effectiveMaxX) {
+      if (this.terminalController.getState().mode.autoWrap) {
+        this.state.x -= effectiveMaxX + 1;
         this.state.y++;
+      } else {
+        this.state.x = effectiveMaxX;
+        break;
       }
     }
 
     // Ensure cursor stays within bounds
-    this.state.x = Math.max(0, this.state.x);
-    if (this.maxX !== Infinity) {
-      this.state.x = Math.min(this.state.x, this.maxX);
-    }
-
-    this.state.y = Math.max(0, this.state.y);
-    if (this.maxY !== Infinity) {
-      this.state.y = Math.min(this.state.y, this.maxY);
-    }
+    this.state.x = Math.max(0, Math.min(this.state.x, effectiveMaxX));
+    this.state.y = Math.max(0, Math.min(this.state.y, effectiveMaxY));
   }
 
   // Reset cursor state to initial values
@@ -245,5 +310,17 @@ export class CursorStateManager {
     this.state.x = x;
     this.state.y = y;
     this.enforceBounds();
+  }
+
+  public async setup(controller: TerminalController) {
+    const dsr = CSISequence.from(new Uint8Array([0x1b, 0x5b, 0x36, 0x6e])); // ESC [ 6 n
+    const response = await controller.sendSequenceWithResponse(
+      dsr,
+      /\x1b\[(\d+);(\d+)R/
+    );
+
+    const y = parseInt(response[1], 10);
+    const x = parseInt(response[2], 10);
+    this.setPosition(x, y);
   }
 }

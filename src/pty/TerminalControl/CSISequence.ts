@@ -213,4 +213,33 @@ export class CSISequence
 
     return this.from(new Uint8Array(bytes));
   }
+
+  get command(): string {
+    const commandMap: { [key: number]: string } = {
+      0x41: "CUU", // Cursor Up
+      0x42: "CUD", // Cursor Down
+      0x43: "CUF", // Cursor Forward
+      0x44: "CUB", // Cursor Back
+      0x45: "CNL", // Cursor Next Line
+      0x46: "CPL", // Cursor Previous Line
+      0x47: "CHA", // Cursor Horizontal Absolute
+      0x48: "CUP", // Cursor Position
+      0x4a: "ED", // Erase in Display
+      0x4b: "EL", // Erase in Line
+      0x53: "SU", // Scroll Up
+      0x54: "SD", // Scroll Down
+      0x68: "SM", // Set Mode
+      0x6c: "RM", // Reset Mode
+      0x6d: "SGR", // Select Graphic Rendition
+      0x72: "DECSTBM", // Set Scrolling Region
+      0x73: "SCOSC", // Save Cursor Position
+      0x75: "SCORC", // Restore Cursor Position
+    };
+
+    return commandMap[this.finalByte] || String.fromCharCode(this.finalByte);
+  }
+
+  includesParam(value: number): boolean {
+    return this.parameters.some((param) => param.value === value);
+  }
 }

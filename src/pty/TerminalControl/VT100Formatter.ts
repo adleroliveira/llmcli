@@ -18,7 +18,7 @@ export interface FormatterOptions {
 
 const DEFAULT_OPTIONS: FormatterOptions = {
   verbosity: VerbosityLevel.DETAILED,
-  showRawBytes: true,
+  showRawBytes: false,
 };
 
 export class VT100Formatter {

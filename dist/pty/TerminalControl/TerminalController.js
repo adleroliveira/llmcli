@@ -2,8 +2,12 @@ import { EventEmitter } from "events";
 import * as pty from "node-pty";
 import { VT100Parser } from "./VT100Parser.js";
 import { VT100Formatter } from "./VT100Formatter.js";
-import { CSISequence } from "./CSISequence.js";
 import { CursorStateManager } from "./CursorStateManager.js";
+import { ViewportStateManager } from "./ViewportStateManager.js";
+import { CharsetStateManager } from "./CharsetStateManager.js";
+import { ModeStateManager } from "./ModeStateManager.js";
+import { PromptStateManager } from "./PromptStateManager.js";
+import { LineBufferManager } from "./LineBufferManager.js";
 import { DebugLogger } from "./DebugLogger.js";
 DebugLogger.initialize({
     logFile: "pty-debug.log",
@@ -11,11 +15,18 @@ DebugLogger.initialize({
     flushInterval: 2000, // 2 seconds
     maxBufferSize: 16384, // 16KB
 });
+const DEFATUL_STREAM_ACTIVE_TIMEOUT = 500;
 export class TerminalController extends EventEmitter {
     constructor(config) {
         super();
-        this.cursorStateManager = new CursorStateManager();
-        this.state = this.createInitialState();
+        this.streamActive = false;
+        this.streamActiveTimer = null;
+        this.viewportStateManager = new ViewportStateManager(this);
+        this.cursorStateManager = new CursorStateManager(this);
+        this.lineBufferManager = new LineBufferManager(this);
+        this.charsetStateManager = new CharsetStateManager();
+        this.modeStateManager = new ModeStateManager();
+        this.promptStateManager = new PromptStateManager(this, "[⚡]");
         this.config = config;
         this.responseHandlers = [];
         this.responseBuffer = "";
@@ -28,44 +39,12 @@ export class TerminalController extends EventEmitter {
         this.setupTerminal();
         this.on("ready", this.handleTerminalReady.bind(this));
     }
-    createInitialState() {
-        return {
-            attributes: {
-                bold: false,
-                dim: false,
-                italic: false,
-                underline: false,
-                blink: false,
-                inverse: false,
-                hidden: false,
-                strike: false,
-            },
-            buffer: [],
-            modes: {
-                applicationCursor: false,
-                applicationKeypad: false,
-                wrap: true,
-                insert: false,
-                originMode: false,
-                autoWrap: true,
-                bracketedPaste: false,
-                mouseTracking: false,
-            },
-            viewport: {
-                width: 80, // Default terminal width
-                height: 24, // Default terminal height
-                scrollTop: 0,
-                scrollBottom: 23, // height - 1
-            },
-            charset: {
-                current: 0,
-                g0: 0,
-                g1: 0,
-            },
-        };
-    }
     async handleTerminalReady() {
-        await this.setCursorPosition();
+        await this.cursorStateManager.setup(this);
+        this.on("streamActive", (status) => {
+            if (!status)
+                DebugLogger.log("State", this.getState());
+        });
     }
     getShell() {
         return process.platform === "win32"
@@ -78,6 +57,8 @@ export class TerminalController extends EventEmitter {
         const shell = this.getShell();
         const cols = process.stdout.columns || 80;
         const rows = process.stdout.rows || 24;
+        // Initialize viewport state
+        this.viewportStateManager.resize(cols, rows);
         this.ptyProcess = pty.spawn(shell, [], {
             name: "xterm-256color",
             cols: cols,
@@ -100,9 +81,7 @@ export class TerminalController extends EventEmitter {
             const newRows = process.stdout.rows || 24;
             // Resize the PTY
             this.ptyProcess.resize(newCols, newRows);
-            this.state.viewport.width = newCols;
-            this.state.viewport.height = newRows;
-            this.state.viewport.scrollBottom = newRows - 1;
+            this.viewportStateManager.resize(newCols, newRows);
             this.emit("resize", { cols: newCols, rows: newRows });
         });
         // Exit handling
@@ -110,13 +89,10 @@ export class TerminalController extends EventEmitter {
             DebugLogger.log("PTY Exit", { exitCode });
             process.exit(exitCode);
         });
-        // Initialize viewport state
-        this.state.viewport.width = cols;
-        this.state.viewport.height = rows;
-        this.state.viewport.scrollBottom = rows - 1;
         process.nextTick(() => this.emit("ready"));
     }
     handleInput(data) {
+        this.setActiveStream();
         // Check for pending response handlers
         if (this.responseHandlers.length > 0) {
             this.responseBuffer += data.toString();
@@ -125,15 +101,10 @@ export class TerminalController extends EventEmitter {
                 const handler = this.responseHandlers[i];
                 const match = this.responseBuffer.match(handler.pattern);
                 if (match) {
-                    // Clear the timeout
                     clearTimeout(handler.timer);
-                    // Remove the handler
                     this.responseHandlers.splice(i, 1);
-                    // Process the match
                     handler.resolve(match);
-                    // Remove the matched portion from the buffer
                     this.responseBuffer = this.responseBuffer.slice(match[0].length);
-                    // Don't forward this to PTY
                     return;
                 }
             }
@@ -142,23 +113,35 @@ export class TerminalController extends EventEmitter {
         this.ptyProcess.write(data);
     }
     handleOutput(data) {
-        let outpuStr = "";
+        this.setActiveStream();
+        let outputStr = "";
         const sequences = this.parser.parseString(data);
         for (const sequence of sequences) {
-            const transformedSequences = this.handleSequence(sequence);
-            transformedSequences.forEach((seq) => {
-                DebugLogger.log("", VT100Formatter.format(seq));
-                outpuStr += seq.toString();
-            });
+            const handledSequence = this.handleSequence(sequence);
+            DebugLogger.log("", VT100Formatter.format(handledSequence));
+            outputStr += handledSequence.toString();
         }
-        process.stdout.write(outpuStr);
+        process.stdout.write(outputStr);
     }
-    handleSequence(sequence) {
-        // Update cursor state
+    handleSequence(sequence, skipRecursion = false) {
+        // Update all state managers except prompt
+        this.charsetStateManager.processSequence(sequence);
+        this.modeStateManager.processSequence(sequence);
+        this.viewportStateManager.processSequence(sequence);
         this.cursorStateManager.processSequence(sequence);
-        // Emit sequence event for external handlers
-        this.emit("sequence", sequence);
-        return [sequence];
+        this.lineBufferManager.processSequence(sequence);
+        // if (!skipRecursion) {
+        //   const transformedSequence =
+        //     this.promptStateManager.processSequence(sequence);
+        //   if (transformedSequence !== sequence) {
+        //     return this.handleSequence(transformedSequence, true);
+        //   }
+        // }
+        return sequence;
+    }
+    sendSequence(sequence) {
+        this.setActiveStream();
+        process.stdout.write(sequence.toString());
     }
     async sendSequenceWithResponse(sequence, responsePattern, timeout) {
         return new Promise((resolve, reject) => {
@@ -181,11 +164,38 @@ export class TerminalController extends EventEmitter {
             process.stdout.write(sequence.toString());
         });
     }
-    async setCursorPosition() {
-        const dsr = CSISequence.from(new Uint8Array([0x1b, 0x5b, 0x36, 0x6e])); // ESC [ 6 n
-        const response = await this.sendSequenceWithResponse(dsr, /\x1b\[(\d+);(\d+)R/);
-        const y = parseInt(response[1], 10);
-        const x = parseInt(response[2], 10);
-        this.cursorStateManager.setPosition(x, y);
+    setActiveStream() {
+        if (!this.streamActive) {
+            this.streamActive = true;
+            this.emit("streamActive", true);
+        }
+        if (this.streamActiveTimer)
+            clearTimeout(this.streamActiveTimer);
+        this.streamActiveTimer = setTimeout(() => {
+            this.streamActive = false;
+            this.emit("streamActive", false);
+            this.streamActiveTimer = null;
+        }, this.config.activeStreamTimeout || DEFATUL_STREAM_ACTIVE_TIMEOUT);
+    }
+    getState() {
+        return {
+            cursor: this.cursorStateManager.getState(),
+            viewport: this.viewportStateManager.getState(),
+            charset: this.charsetStateManager.getState(),
+            mode: this.modeStateManager.getState(),
+            lineBuffer: this.lineBufferManager.getState(),
+        };
+    }
+    getViewPortStateManager() {
+        return this.viewportStateManager;
+    }
+    getCursorStateManager() {
+        return this.cursorStateManager;
+    }
+    getLineBufferManager() {
+        return this.lineBufferManager;
+    }
+    getPromptStateManager() {
+        return this.promptStateManager;
     }
 }

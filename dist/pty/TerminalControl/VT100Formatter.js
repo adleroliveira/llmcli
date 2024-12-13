@@ -7,7 +7,7 @@ export var VerbosityLevel;
 })(VerbosityLevel || (VerbosityLevel = {}));
 const DEFAULT_OPTIONS = {
     verbosity: VerbosityLevel.DETAILED,
-    showRawBytes: true,
+    showRawBytes: false,
 };
 export class VT100Formatter {
     static getOSCCommand(raw) {
