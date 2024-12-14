@@ -10,7 +10,9 @@ import { ModeStateManager, ModeState } from "./ModeStateManager.js";
 import { PromptStateManager } from "./PromptStateManager.js";
 import { LineBufferManager, LineBufferState } from "./LineBufferManager.js";
 import { DebugLogger } from "./DebugLogger.js";
-import { init } from "./sequences/init.js"
+import { init } from "./sequences/init.js";
+import { clear } from "./sequences/clearScreen.js";
+import { Terminal } from "./Terminal.js";
 
 DebugLogger.initialize({
   logFile: "pty-debug.log",
@@ -66,6 +68,7 @@ export class TerminalController extends EventEmitter {
   private modeStateManager: ModeStateManager;
   private lineBufferManager: LineBufferManager;
   private promptStateManager: PromptStateManager;
+  private terminal: Terminal;
 
   private ptyProcess!: pty.IPty;
   private responseHandlers: SequenceResponseHandler[];
@@ -83,6 +86,12 @@ export class TerminalController extends EventEmitter {
     this.charsetStateManager = new CharsetStateManager();
     this.modeStateManager = new ModeStateManager();
     this.promptStateManager = new PromptStateManager(this, "[⚡]");
+    this.terminal = new Terminal({
+      stdout: process.stdout,
+      name: "Terminal AI Assistant 🤖",
+      cols: Math.floor(process.stdout.columns / 2),
+      rows: process.stdout.rows,
+    });
 
     this.config = config;
     this.responseHandlers = [];
@@ -100,8 +109,8 @@ export class TerminalController extends EventEmitter {
   }
 
   private async handleTerminalReady() {
-    this.handleOutput(init);
-    process.stdout.write(init);
+    // this.handleOutput(clear);
+    // process.stdout.write(clear);
     // await this.cursorStateManager.setup(this);
     // this.on("streamActive", (status: boolean) => {
     //   if (!status) DebugLogger.log("State", this.getState());
@@ -112,19 +121,19 @@ export class TerminalController extends EventEmitter {
     return process.platform === "win32"
       ? "powershell.exe"
       : process.platform === "darwin"
-        ? "/bin/zsh"
-        : process.env.SHELL || "bash";
+      ? "/bin/zsh"
+      : process.env.SHELL || "bash";
   }
 
   private setupTerminal(): void {
     const cols = process.stdout.columns || 80;
     const rows = process.stdout.rows || 24;
 
-    this.ptyProcess = this.createPty(cols, rows)
+    // this.ptyProcess = this.createPty(cols, rows);
     this.viewportStateManager.resize(cols, rows);
 
-    this.ptyProcess.onData(this.handlePtyOutput.bind(this));
-    this.ptyProcess.onExit(this.handlePtyExit.bind(this));
+    // this.ptyProcess.onData(this.handlePtyOutput.bind(this));
+    // this.ptyProcess.onExit(this.handlePtyExit.bind(this));
 
     process.stdin.setRawMode(true);
     process.stdin.resume();
@@ -134,19 +143,15 @@ export class TerminalController extends EventEmitter {
     process.nextTick(() => this.emit("ready"));
   }
 
-  private handlePtyOutput(data: string): void {
-
-  }
+  private handlePtyOutput(data: string): void {}
 
   private handleTerminalInput(data: string): void {
-    this.setActiveStream();
-    DebugLogger.log(data)
+    // this.setActiveStream();
+    // DebugLogger.log(data);
+    this.terminal.write(data);
   }
 
-  private handlePtyExit(exitMetada: {
-    exitCode: number;
-    signal?: number;
-  }) {
+  private handlePtyExit(exitMetada: { exitCode: number; signal?: number }) {
     const { exitCode } = exitMetada;
     DebugLogger.log("PTY Exit", { exitCode });
     process.exit(exitCode);
@@ -157,7 +162,7 @@ export class TerminalController extends EventEmitter {
     const newRows = process.stdout.rows || 24;
 
     // Resize the PTY
-    this.ptyProcess.resize(newCols, newRows);
+    // this.ptyProcess.resize(newCols, newRows);
     this.viewportStateManager.resize(newCols, newRows);
     this.emit("resize", { cols: newCols, rows: newRows });
   }
@@ -197,7 +202,7 @@ export class TerminalController extends EventEmitter {
       }
     }
     // Forward unhandled input to PTY
-    this.ptyProcess.write(data);
+    // this.ptyProcess.write(data);
   }
 
   private handleOutput(data: string) {

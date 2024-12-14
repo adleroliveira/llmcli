@@ -4,8 +4,8 @@ import { BedrockAgent, Tool } from "./BedrockAgent.js";
 import { SystemContentBlock } from "@aws-sdk/client-bedrock-runtime";
 import { AwsCredentials } from "./ConfigManager";
 import { processManager } from "./BackgroundProcessManager.js";
-import { DebugLogger } from "./pty/TerminalControl/DebugLogger.js";
-import { TerminalController } from "./pty/TerminalControl/TerminalController.js";
+import { DebugLogger } from "./terminal/DebugLogger.js";
+import { TerminalController } from "./terminal/TerminalController.js";
 DebugLogger.initialize();
 
 interface BedrockCLIConfig {

@@ -78,6 +78,7 @@ export class VT100Formatter {
     ["B", { short: "CUD", full: "CUD - Cursor Down" }],
     ["C", { short: "CUF", full: "CUF - Cursor Forward" }],
     ["D", { short: "CUB", full: "CUB - Cursor Backward" }],
+    ["E", { short: "CNL", full: "CNL - Cursor Next Line" }],
   ]);
 
   private static modeDescriptions = new Map([

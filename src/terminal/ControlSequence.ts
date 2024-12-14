@@ -8,12 +8,12 @@ export class ControlSequence extends VT100Sequence {
     super(
       SequenceType.C0,
       controlChar,
-      new Uint8Array([controlChar])  // controlChar is already a number
+      new Uint8Array([controlChar]) // controlChar is already a number
     );
   }
 
   isValid(): boolean {
-    return this.raw[0] <= 0x1F || this.raw[0] === 0x7F;  // Valid C0 range plus DEL
+    return this.raw[0] <= 0x1f || this.raw[0] === 0x7f; // Valid C0 range plus DEL
   }
 
   toString(): string {

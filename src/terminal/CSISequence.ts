@@ -45,9 +45,9 @@ export enum CSICommand {
 
   // Erase/Delete commands
   DCH = "P", // Delete Character
-  DL = "M",  // Delete Line
+  DL = "M", // Delete Line
   ICH = "@", // Insert Character
-  IL = "L",  // Insert Line
+  IL = "L", // Insert Line
 
   // Screen commands
   DECSLRM = "s", // Set Left and Right Margins
@@ -138,7 +138,8 @@ export class TextFormatter {
 
 export class CSISequence
   extends VT100Sequence
-  implements ParameterizedSequence, IntermediateBytes {
+  implements ParameterizedSequence, IntermediateBytes
+{
   constructor(
     raw: Uint8Array,
     public readonly parameters: Parameter[],
@@ -154,9 +155,9 @@ export class CSISequence
     isPrivate: boolean = false
   ): CSISequence {
     // Convert params to Parameter array
-    const parameters: Parameter[] = params.map(value => ({
+    const parameters: Parameter[] = params.map((value) => ({
       value,
-      private: isPrivate
+      private: isPrivate,
     }));
 
     // Build the raw byte sequence
@@ -211,6 +212,18 @@ export class CSISequence
     return `\x1B[${params}${intermediate}${String.fromCharCode(
       this.finalByte
     )}`;
+  }
+
+  static fromParameters(
+    parameters: Parameter[],
+    command: CSICommand,
+    isPrivate: boolean = false
+  ): CSISequence {
+    // Convert Parameter array to array of values for create() method
+    const paramValues = parameters.map((p) => p.value);
+
+    // Use the existing create() method
+    return CSISequence.create(command, paramValues, isPrivate);
   }
 
   static isCursorCommand = (sequence: CSISequence): boolean => {

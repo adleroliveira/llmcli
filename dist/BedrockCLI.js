@@ -1,8 +1,8 @@
 import chalk from "chalk";
 import { BedrockAgent } from "./BedrockAgent.js";
 import { processManager } from "./BackgroundProcessManager.js";
-import { DebugLogger } from "./pty/TerminalControl/DebugLogger.js";
-import { TerminalController } from "./pty/TerminalControl/TerminalController.js";
+import { DebugLogger } from "./terminal/DebugLogger.js";
+import { TerminalController } from "./terminal/TerminalController.js";
 DebugLogger.initialize();
 class BedrockCLI {
     constructor(config) {
