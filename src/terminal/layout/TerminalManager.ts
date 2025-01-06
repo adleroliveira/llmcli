@@ -39,10 +39,7 @@ export class TerminalManager extends EventEmitter {
     });
 
     // Set up event listeners
-    this.app.addEventListener(
-      "renderNeeded",
-      this.handleRenderNeeded.bind(this)
-    );
+    this.app.setOnDirtyCallback(this.handleRenderNeeded.bind(this));
 
     // Bind cleanup to process events
     this.setupCleanup();

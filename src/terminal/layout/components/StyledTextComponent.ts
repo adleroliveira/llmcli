@@ -2,6 +2,7 @@ import { TerminalComponent, ComponentProps } from "../TerminalComponent.js";
 import { StyledTextContentManager } from "./StyledTextContentManager.js";
 import { ContentStyle } from "../ContentManager.js";
 import { Size } from "../index.js";
+import { HierarchicalLogger } from "../HierarchicalLogger.js";
 
 interface StyledTextComponentProps extends ComponentProps {
   text?: string;
@@ -18,7 +19,6 @@ export class StyledTextComponent extends TerminalComponent {
       props.text || "",
       props.style
     );
-    this._flexGrow = 1;
     this.setContentManager(this.textManager);
 
     this.setLayoutConstraints({
@@ -31,7 +31,7 @@ export class StyledTextComponent extends TerminalComponent {
     if (!this.contentManager) return;
 
     // Use actual dimensions for content synchronization
-    this.contentManager.measure(this.width || 1, this.height || 1);
+    this.contentManager.measure({ width: this.width, height: this.height });
     this.markDirty();
   }
 
@@ -41,38 +41,70 @@ export class StyledTextComponent extends TerminalComponent {
     super.render();
   }
 
-  protected measureContent(): Size {
-    if (!this.contentManager) {
-      return { width: 1, height: 1 };
+  protected measureContent(availableSpace?: Size): Size {
+    if (this.contentManager) {
+      return this.contentManager.measure({
+        width: availableSpace?.width ?? this.width,
+        height: availableSpace?.height ?? this.height,
+      });
     }
 
-    // Use current dimensions for measurement if no constraints
-    const measureWidth = (this._layoutConstraints.maxWidth ?? this.width) || 1;
-    const measureHeight =
-      (this._layoutConstraints.maxHeight ?? this.height) || 1;
-
-    // Check cache with actual measurement values
-    if (
-      this.lastMeasurement &&
-      this.lastMeasurement.width === measureWidth &&
-      this.lastMeasurement.height === measureHeight
-    ) {
-      return this.lastMeasurement.result;
-    }
-
-    const measurement = this.contentManager.measure(
-      measureWidth,
-      measureHeight
-    );
-
-    // Cache results using actual measurement values
-    this.lastMeasurement = {
-      width: measureWidth,
-      height: measureHeight,
-      result: measurement,
+    const stripTags = (text: string): string => {
+      return text.replace(/<[^>]+>/g, "");
     };
 
-    return measurement;
+    // Get the raw content (this should be a class property)
+    const rawContent =
+      "Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello";
+    const pureText = stripTags(rawContent);
+    const words = pureText.split(" ");
+
+    // If no available space is provided or width is unlimited
+    if (!availableSpace || !availableSpace.width) {
+      return {
+        width: pureText.length,
+        height: 1,
+      };
+    }
+
+    // Calculate wrapped text dimensions
+    let currentLineLength = 0;
+    let currentHeight = 1;
+    let maxWidth = 0;
+
+    for (const word of words) {
+      // Add space between words except at the start of a line
+      const wordLength = word.length + (currentLineLength > 0 ? 1 : 0);
+
+      // Check if word fits on current line
+      if (currentLineLength + wordLength <= availableSpace.width) {
+        currentLineLength += wordLength;
+      } else {
+        // Word doesn't fit, start new line
+        currentHeight++;
+        currentLineLength = word.length;
+      }
+
+      // Keep track of the maximum width used
+      maxWidth = Math.max(maxWidth, currentLineLength);
+    }
+
+    const measuredWidth = Math.min(maxWidth, availableSpace.width);
+    const measuredHeight = currentHeight;
+
+    HierarchicalLogger.log(
+      `${this.componentId}.getContentSize(): ContentManager NOT FOUND`,
+      {
+        availableSpace,
+        size: `${this.width}x${this.height}`,
+        measured: `${measuredWidth}x${measuredHeight}`,
+      }
+    );
+
+    return {
+      width: measuredWidth,
+      height: measuredHeight,
+    };
   }
 
   public resize(width: number, height: number): void {

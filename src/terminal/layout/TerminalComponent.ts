@@ -150,6 +150,7 @@ export abstract class TerminalComponent {
   protected onUnmount(): void {}
   protected onResize(): void {}
   protected onContentOverflow(): void {}
+  protected onDirtyCallback?: () => void;
   protected _minWidth: number = 0;
   protected _minHeight: number = 0;
   protected _maxWidth: number = Infinity;
@@ -246,13 +247,11 @@ export abstract class TerminalComponent {
 
   private getContentSize(availableSize?: Size): Size {
     let measurement: Size;
+
     if (!this.contentManager) {
       measurement = this.measureContent(availableSize);
     } else {
-      measurement = this.contentManager.measure(
-        availableSize?.width || this.width,
-        availableSize?.height || this.height
-      );
+      measurement = this.contentManager.measure(availableSize);
     }
     HierarchicalLogger.log(`${this.componentId}.getContentSize()`, {
       source: !!this.contentManager ? "contentManager" : "component",
@@ -415,33 +414,39 @@ export abstract class TerminalComponent {
   }
 
   protected resolveSize(size?: Size): Size {
-    const { width: preferredWidth, height: preferredHeight } =
-      this.getPreferredSize();
-
-    const newWidth = size?.width || preferredWidth;
-    const newHeight = size?.height || preferredHeight;
-
-    // Calculate effective constraints
+    // Calculate effective constraints first
     const effectiveMinWidth = Math.max(
       this._minWidth,
       this._layoutConstraints.minWidth
     );
+
     const effectiveMaxWidth = Math.min(
       isFinite(this._maxWidth) ? this._maxWidth : Number.MAX_SAFE_INTEGER,
       isFinite(this._layoutConstraints.maxWidth)
         ? this._layoutConstraints.maxWidth
         : Number.MAX_SAFE_INTEGER
     );
+
     const effectiveMinHeight = Math.max(
       this._minHeight,
       this._layoutConstraints.minHeight
     );
+
     const effectiveMaxHeight = Math.min(
       isFinite(this._maxHeight) ? this._maxHeight : Number.MAX_SAFE_INTEGER,
       isFinite(this._layoutConstraints.maxHeight)
         ? this._layoutConstraints.maxHeight
         : Number.MAX_SAFE_INTEGER
     );
+
+    const { width: preferredWidth, height: preferredHeight } =
+      this.getPreferredSize({
+        width: effectiveMaxWidth,
+        height: effectiveMaxHeight,
+      });
+
+    const newWidth = size?.width || preferredWidth;
+    const newHeight = size?.height || preferredHeight;
 
     // Determine width: try new size, then explicit size, then preferred size
     let width: number;
@@ -520,7 +525,7 @@ export abstract class TerminalComponent {
 
   protected addChildBase(child: TerminalComponent): void {
     HierarchicalLogger.startTrace("Add Child");
-    HierarchicalLogger.log(`${this.componentId}.addChildBase()`, {
+    HierarchicalLogger.log(`${this.componentId}.addChild()`, {
       child: child.componentId,
       currentChildren: this.children.length,
       childConstraints: stringifyConstraints(child.getLayoutConstraints()),
@@ -543,8 +548,6 @@ export abstract class TerminalComponent {
 
     // Request layout since we added a new child
     this.requestLayout();
-
-    child.onMount();
     this.markDirty();
 
     HierarchicalLogger.endGroup();
@@ -669,6 +672,7 @@ export abstract class TerminalComponent {
     return this._flexGrow;
   }
 
+  // TODO: Fix this to also consider _minWidth and _minHeight (explicit constraints)
   public getMinWidth(): number {
     return this._layoutConstraints.minWidth;
   }
@@ -711,9 +715,20 @@ export abstract class TerminalComponent {
       });
       return;
     }
-    const preferredSize = this.getPreferredSize();
-    const size = this.resolveSize(preferredSize);
-    this.resize(size.width, size.height);
+
+    // Instead of getting preferred size, just adjust current size to fit constraints
+    const newWidth = Math.min(
+      Math.max(this.width, this._layoutConstraints.minWidth),
+      this._layoutConstraints.maxWidth
+    );
+    const newHeight = Math.min(
+      Math.max(this.height, this._layoutConstraints.minHeight),
+      this._layoutConstraints.maxHeight
+    );
+
+    if (newWidth !== this.width || newHeight !== this.height) {
+      this.resize(newWidth, newHeight);
+    }
   }
 
   protected isSizeWithinConstraints(size?: Size): boolean {
@@ -1125,8 +1140,18 @@ export abstract class TerminalComponent {
         source: UpdateContext.getInstance().getCurrentSource(),
       });
 
+      HierarchicalLogger.log(`${this.componentId}.resizeIfNeeded()`);
+      HierarchicalLogger.startGroup();
       this.resizeIfNeeded();
+      HierarchicalLogger.endGroup();
     }
+  }
+
+  public getExplicitSize(): Partial<Size> {
+    return {
+      width: this._explicitWidth,
+      height: this._explicitHeight,
+    };
   }
 
   public getMinSize(): Size {
@@ -1143,15 +1168,9 @@ export abstract class TerminalComponent {
 
   public getPreferredSize(availableSpace?: Size): Size {
     const contentSize = this.getContentMeasurement(availableSpace);
-    const safeContentWidth = isFinite(contentSize.width)
-      ? contentSize.width
-      : Number.MAX_SAFE_INTEGER;
-    const safeContentHeight = isFinite(contentSize.height)
-      ? contentSize.height
-      : Number.MAX_SAFE_INTEGER;
     const preferred = {
-      width: this._explicitWidth ?? safeContentWidth,
-      height: this._explicitHeight ?? safeContentHeight,
+      width: this._explicitWidth ?? contentSize.width,
+      height: this._explicitHeight ?? contentSize.height,
     };
     return preferred;
   }
@@ -1234,6 +1253,10 @@ export abstract class TerminalComponent {
 
   public getBuffer(): TerminalBuffer {
     return this.buffer;
+  }
+
+  public setOnDirtyCallback(callback: () => void) {
+    this.onDirtyCallback = callback;
   }
 }
 

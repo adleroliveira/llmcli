@@ -5,12 +5,11 @@ import {
   ContentSpan,
 } from "../ContentManager.js";
 import { TerminalBuffer, SGRColor } from "../TerminalBuffer.js";
-import { Cell } from "../index.js";
+import { Cell, Size } from "../index.js";
 
 type CellAttributes = Cell["attributes"];
 
 export class StyledTextContentManager extends ContentManager<CellAttributes> {
-  protected cachedMeasurement: ContentMeasurement<CellAttributes> | null = null;
   private parsedContent: {
     spans: ContentSpan<CellAttributes>[];
     plainText: string;
@@ -40,7 +39,6 @@ export class StyledTextContentManager extends ContentManager<CellAttributes> {
   setContent(content: string): void {
     super.setContent(content);
     this.parsedContent = this.parseContentAndCalculateDimensions(content);
-    this.cachedMeasurement = null; // Invalidate cached measurement
   }
 
   protected parseContent(text: string): ContentSpan<CellAttributes>[] {
@@ -118,17 +116,12 @@ export class StyledTextContentManager extends ContentManager<CellAttributes> {
     return spans;
   }
 
-  measureContent(
-    availableWidth: number,
-    availableHeight: number
-  ): ContentMeasurement<CellAttributes> {
+  measureContent(availableSize?: Size): ContentMeasurement<CellAttributes> {
     // Ensure we have valid, finite dimensions to work with
-    const effectiveAvailableWidth = Number.isFinite(availableWidth)
-      ? availableWidth
-      : this.parsedContent.naturalWidth;
-    const effectiveAvailableHeight = Number.isFinite(availableHeight)
-      ? availableHeight
-      : this.parsedContent.naturalHeight;
+    const effectiveAvailableWidth =
+      availableSize?.width || this.parsedContent.naturalWidth;
+    const effectiveAvailableHeight =
+      availableSize?.height || this.parsedContent.naturalHeight;
 
     const { padding } = this.style;
     const paddingH = (padding?.left || 0) + (padding?.right || 0);
@@ -160,22 +153,19 @@ export class StyledTextContentManager extends ContentManager<CellAttributes> {
       Math.min(effectiveAvailableHeight, wrappedHeight + paddingV)
     );
 
-    this.cachedMeasurement = {
+    return {
       width: finalWidth,
       height: finalHeight,
       wrappedContent,
     };
-
-    return this.cachedMeasurement;
   }
 
   render(buffer: TerminalBuffer): void {
-    if (!this.cachedMeasurement) {
-      // If we don't have a measurement yet, measure with buffer dimensions
-      this.measure(buffer.width, buffer.height);
-    }
-
-    const measurement = this.cachedMeasurement!;
+    // Measure with current buffer dimensions
+    const measurement = this.measure({
+      width: buffer.width,
+      height: buffer.height,
+    });
     const { padding } = this.style;
     const startY = padding?.top || 0;
     const startX = padding?.left || 0;

@@ -1,7 +1,6 @@
-import { TerminalComponent, ComponentProps } from "../TerminalComponent.js";
+import { FlexContainer, FlexContainerProps } from "./FlexContainer.js";
 import { TerminalBuffer, SGRColor } from "../TerminalBuffer.js";
-import { Size, Position, Cell } from "../index.js";
-import { DebugLogger } from "../../DebugLogger.js";
+import { Size, Position } from "../index.js";
 
 export type BorderStyle = "none" | "single" | "double" | "rounded";
 
@@ -13,7 +12,7 @@ export interface TitleStyle {
   backgroundColor?: SGRColor | { r: number; g: number; b: number } | number;
 }
 
-export interface ContainerProps extends ComponentProps {
+export interface ContainerProps extends FlexContainerProps {
   title?: string;
   titleStyle?: TitleStyle;
   borderStyle?: BorderStyle;
@@ -21,7 +20,7 @@ export interface ContainerProps extends ComponentProps {
   padding?: number;
 }
 
-export class Container extends TerminalComponent {
+export class Container extends FlexContainer {
   protected title: string;
   protected borderStyle: BorderStyle;
   protected titleStyle: TitleStyle;
@@ -32,81 +31,48 @@ export class Container extends TerminalComponent {
   constructor(props: ContainerProps = {}) {
     super(props);
 
-    // If no explicit size, use parent's size
-    if (!props.width && !props.height) {
-      props.width = props.width ?? this.parent?.width ?? 1;
-      props.height = props.height ?? this.parent?.height ?? 1;
-    }
-
     this.title = props.title ?? "";
     this.titleStyle = props.titleStyle ?? {};
     this.borderStyle = props.borderStyle ?? "single";
     this.margin = props.margin ?? 0;
     this.padding = props.padding ?? 0;
-    this._flexGrow = 1;
-
-    // Default to filling available space
-    this.setLayoutConstraints({
-      minWidth: props.width ?? 1,
-      minHeight: props.height ?? 1,
-    });
 
     this.contentBuffer = new TerminalBuffer(0, 0);
     this.updateContentArea();
   }
 
-  protected measureContent(): Size {
-    const borderSize = this.borderStyle === "none" ? 0 : 2;
-    const totalHorizontalSpace =
-      this.margin * 2 + borderSize + this.padding * 2;
-    const totalVerticalSpace = this.margin * 2 + borderSize + this.padding * 2;
-
-    // Measure children
-    let maxChildWidth = 0;
-    let maxChildHeight = 0;
-
-    this.children.forEach((child) => {
-      if (!child.visible) return;
-      const childSize = child.getPreferredSize();
-      maxChildWidth = Math.max(maxChildWidth, childSize.width);
-      maxChildHeight = Math.max(maxChildHeight, childSize.height);
-    });
-
-    return {
-      width: maxChildWidth + totalHorizontalSpace,
-      height: maxChildHeight + totalVerticalSpace,
-    };
-  }
-
-  public getBorderSpace(): number {
-    return this.borderStyle === "none" ? 0 : 2;
-  }
-
   protected layoutChildren(): void {
-    const contentWidth = this.getContentWidth();
-    const contentHeight = this.getContentHeight();
+    const contentDimensions = this.getContentDimensions();
 
-    if (
-      contentWidth !== this.contentBuffer.width ||
-      contentHeight !== this.contentBuffer.height
-    ) {
-      this.contentBuffer.resize(contentWidth, contentHeight);
-    }
-
-    this.children.forEach((child) => {
-      if (!child.visible) return;
-      const borderOffset = this.borderStyle === "none" ? 0 : 1;
-      child.setPosition(this.margin + borderOffset, this.margin + borderOffset);
-      child.resize(contentWidth, contentHeight);
-    });
-  }
-
-  protected getDefaultCursorPosition(): Position {
-    const borderOffset = this.borderStyle === "none" ? 0 : 1;
-    return {
-      x: this.margin + borderOffset + this.padding,
-      y: this.margin + borderOffset + this.padding,
+    // Store original layout constraints
+    const originalConstraints = {
+      minWidth: this.getMinWidth(),
+      maxWidth: this.getMaxWidth(),
+      minHeight: this.getMinHeight(),
+      maxHeight: this.getMaxHeight(),
     };
+
+    // Temporarily adjust layout constraints to account for borders and padding
+    this.setLayoutConstraints({
+      minWidth: contentDimensions.width,
+      maxWidth: contentDimensions.width,
+      minHeight: contentDimensions.height,
+      maxHeight: contentDimensions.height,
+    });
+
+    // Call FlexContainer's layout logic
+    super.layoutChildren();
+
+    // Restore original layout constraints
+    this.setLayoutConstraints(originalConstraints);
+
+    // Adjust children positions to account for margins and borders
+    const offset = this.getContentOffset();
+    this.children.forEach((child) => {
+      if (child.visible) {
+        child.setPosition(child.x + offset.x, child.y + offset.y);
+      }
+    });
   }
 
   protected getContentOffset(): Position {
@@ -124,82 +90,11 @@ export class Container extends TerminalComponent {
     };
   }
 
-  protected isValidCursorPosition(x: number, y: number): boolean {
-    const contentX = this.getContentX();
-    const contentY = this.getContentY();
-    const contentWidth = this.getContentWidth();
-    const contentHeight = this.getContentHeight();
-
-    const isInContent =
-      x >= contentX &&
-      x < contentX + contentWidth &&
-      y >= contentY &&
-      y < contentY + contentHeight;
-
-    if (isInContent && this.children.length > 0) {
-      const relativeX = x - contentX;
-      const relativeY = y - contentY;
-
-      return this.children.some(
-        (child) =>
-          child.visible &&
-          relativeX >= child.x &&
-          relativeX < child.x + child.width &&
-          relativeY >= child.y &&
-          relativeY < child.y + child.height
-      );
-    }
-
-    return isInContent;
-  }
-
-  public focus(): void {
-    if (!this.focusable) return;
-
-    const focusableChild = this.children.find(
-      (child) => child.focusable && child.visible
-    );
-    if (focusableChild) {
-      focusableChild.focus();
-      this.setHierarchicalFocus(true);
-    } else {
-      super.focus();
-    }
-  }
-
-  public moveCursor(deltaX: number, deltaY: number): void {
-    if (!this.activeFocus) return;
-
-    const currentPos = this.getCursorPosition();
-    const newX = currentPos.x + deltaX;
-    const newY = currentPos.y + deltaY;
-
-    if (this.isValidCursorPosition(newX, newY)) {
-      this.setCursorPosition(newX, newY);
-    } else {
-      const contentX = this.getContentX();
-      const contentY = this.getContentY();
-      const contentWidth = this.getContentWidth();
-      const contentHeight = this.getContentHeight();
-
-      const clampedX = Math.max(
-        contentX,
-        Math.min(newX, contentX + contentWidth - 1)
-      );
-      const clampedY = Math.max(
-        contentY,
-        Math.min(newY, contentY + contentHeight - 1)
-      );
-
-      if (this.isValidCursorPosition(clampedX, clampedY)) {
-        this.setCursorPosition(clampedX, clampedY);
-      }
-    }
-  }
-
   protected render(): void {
-    this.buffer.clear();
+    // First call super to render the flex content
+    super.render();
 
+    // Then draw borders on top
     const availWidth = this.width - this.margin * 2;
     const availHeight = this.height - this.margin * 2;
 
@@ -208,26 +103,12 @@ export class Container extends TerminalComponent {
     if (this.borderStyle !== "none") {
       this.drawBorders(availWidth, availHeight);
     }
-
-    this.buffer.composite(
-      this.contentBuffer,
-      {
-        x: this.getContentX(),
-        y: this.getContentY(),
-      },
-      {
-        x: this.getContentX(),
-        y: this.getContentY(),
-        width: this.getContentWidth(),
-        height: this.getContentHeight(),
-      }
-    );
   }
 
   private drawBorders(availWidth: number, availHeight: number): void {
     const chars = this.getBorderChars();
-    const innerWidth = availWidth - 2;
 
+    // Draw horizontal borders
     for (let x = 1; x < availWidth - 1; x++) {
       this.buffer.setCharacter(x + this.margin, this.margin, chars.h);
       this.buffer.setCharacter(
@@ -237,6 +118,7 @@ export class Container extends TerminalComponent {
       );
     }
 
+    // Draw vertical borders
     for (let y = 1; y < availHeight - 1; y++) {
       this.buffer.setCharacter(this.margin, y + this.margin, chars.v);
       this.buffer.setCharacter(
@@ -246,6 +128,7 @@ export class Container extends TerminalComponent {
       );
     }
 
+    // Draw corners
     this.buffer.setCharacter(this.margin, this.margin, chars.tl);
     this.buffer.setCharacter(
       availWidth - 1 + this.margin,
@@ -263,6 +146,7 @@ export class Container extends TerminalComponent {
       chars.br
     );
 
+    // Draw title if present
     if (this.title) {
       const titleStart = this.margin + 2;
       const maxTitleLength = availWidth - 4;
@@ -271,10 +155,7 @@ export class Container extends TerminalComponent {
           ? this.title.substring(0, maxTitleLength - 3) + "..."
           : this.title;
 
-      // DEBUG
-      // displayTitle = `(contentW: ${this.getContentWidth()}, contentH: ${this.getContentHeight()})`;
-
-      const titleAttributes: Cell["attributes"] = {
+      const titleAttributes = {
         ...(this.titleStyle.bold !== undefined && {
           bold: this.titleStyle.bold,
         }),
@@ -325,14 +206,6 @@ export class Container extends TerminalComponent {
     }
   }
 
-  protected getContentX(): number {
-    return this.margin + (this.borderStyle === "none" ? 0 : 1) + this.padding;
-  }
-
-  protected getContentY(): number {
-    return this.margin + (this.borderStyle === "none" ? 0 : 1) + this.padding;
-  }
-
   protected getContentWidth(): number {
     const borderSize = this.borderStyle === "none" ? 0 : 2;
     return Math.max(
@@ -349,7 +222,20 @@ export class Container extends TerminalComponent {
     );
   }
 
-  // Setters now trigger layout instead of just marking dirty
+  private updateContentArea(): void {
+    const contentWidth = this.getContentWidth();
+    const contentHeight = this.getContentHeight();
+
+    if (
+      contentWidth !== this.contentBuffer.width ||
+      contentHeight !== this.contentBuffer.height
+    ) {
+      this.contentBuffer.resize(contentWidth, contentHeight);
+      this.requestLayout();
+    }
+  }
+
+  // Public setters
   public setTitle(title: string): void {
     if (this.title !== title) {
       this.title = title;
@@ -376,64 +262,6 @@ export class Container extends TerminalComponent {
     if (this.padding !== padding) {
       if (padding < 0) throw new Error("Padding must be non-negative");
       this.padding = padding;
-      this.requestLayout();
-    }
-  }
-
-  public findNextFocusablePosition(
-    currentX: number,
-    currentY: number,
-    direction: "up" | "down" | "left" | "right"
-  ): Position | null {
-    const contentX = this.getContentX();
-    const contentY = this.getContentY();
-
-    const relX = currentX - contentX;
-    const relY = currentY - contentY;
-    const nextChild = this.findNextFocusableChild(relX, relY, direction);
-
-    if (nextChild) {
-      return {
-        x: contentX + nextChild.x,
-        y: contentY + nextChild.y,
-      };
-    }
-
-    return null;
-  }
-
-  private findNextFocusableChild(
-    x: number,
-    y: number,
-    direction: "up" | "down" | "left" | "right"
-  ): TerminalComponent | null {
-    return (
-      this.children.find((child) => {
-        if (!child.visible || !child.focusable) return false;
-
-        switch (direction) {
-          case "up":
-            return child.y < y;
-          case "down":
-            return child.y > y;
-          case "left":
-            return child.x < x;
-          case "right":
-            return child.x > x;
-        }
-      }) || null
-    );
-  }
-
-  private updateContentArea(): void {
-    const contentWidth = this.getContentWidth();
-    const contentHeight = this.getContentHeight();
-
-    if (
-      contentWidth !== this.contentBuffer.width ||
-      contentHeight !== this.contentBuffer.height
-    ) {
-      this.contentBuffer.resize(contentWidth, contentHeight);
       this.requestLayout();
     }
   }

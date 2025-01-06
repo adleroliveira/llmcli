@@ -59,11 +59,18 @@ export class FlexContainer extends TerminalComponent {
     const visibleChildren = this.children.filter((child) => child.visible);
 
     if (visibleChildren.length === 0) return;
-
-    HierarchicalLogger.log(`${this.componentId}.calculateFlexDistribution()`);
+    HierarchicalLogger.log(`${this.componentId}.calculateFlexDistribution()`, {
+      direction: this.direction,
+      mainSize,
+      crossSize,
+    });
     HierarchicalLogger.startGroup();
     const distribution = this.calculateFlexDistribution(mainSize);
     HierarchicalLogger.log(`Results`, {
+      direction: this.direction,
+      aligment: this.align,
+      justify: this.justify,
+      gap: this.gap,
       sizeDistribution: JSON.stringify(distribution),
     });
     HierarchicalLogger.endGroup();
@@ -129,10 +136,20 @@ export class FlexContainer extends TerminalComponent {
 
       // Set the final size and position
       if (isRow) {
-        child.setSize(mainAxisSize, crossAxisSize);
+        child.setLayoutConstraints({
+          minWidth: mainAxisSize,
+          maxWidth: mainAxisSize,
+          minHeight: this.align === "stretch" ? crossSize : 0,
+          maxHeight: this.align === "stretch" ? crossSize : crossSize,
+        });
         child.setPosition(mainPosition, crossPosition);
       } else {
-        child.setSize(crossAxisSize, mainAxisSize);
+        child.setLayoutConstraints({
+          minWidth: this.align === "stretch" ? crossSize : 0,
+          maxWidth: this.align === "stretch" ? crossSize : crossSize,
+          minHeight: mainAxisSize,
+          maxHeight: mainAxisSize,
+        });
         child.setPosition(crossPosition, mainPosition);
       }
 
@@ -144,82 +161,101 @@ export class FlexContainer extends TerminalComponent {
   protected calculateFlexDistribution(
     mainAxisSize: number
   ): FlexDistributionResult {
+    // Early return for no children
+    if (this.children.length === 0) {
+      return { sizes: [], remainingSpace: mainAxisSize };
+    }
+
+    // Filter visible children and early return if none
     const visibleChildren = this.children.filter((child) => child.visible);
+    if (visibleChildren.length === 0) {
+      return { sizes: [], remainingSpace: mainAxisSize };
+    }
+
+    // Calculate total gap space
     const totalGapSpace = (visibleChildren.length - 1) * this.gap;
     const availableSpace = Math.max(0, mainAxisSize - totalGapSpace);
 
-    // Separate flex and non-flex items
-    const flexItems: TerminalComponent[] = [];
-    const fixedItems: TerminalComponent[] = [];
-    let totalFixedSize = 0;
+    // Calculate initial available space per child
+    const baseSpacePerChild = Math.floor(
+      availableSpace / visibleChildren.length
+    );
 
-    visibleChildren.forEach((child) => {
-      const preferredSize = child.getPreferredSize();
-      if (child.getFlexGrow() > 0) {
-        flexItems.push(child);
-      } else {
-        fixedItems.push(child);
-        const size =
-          this.direction === "row" ? preferredSize.width : preferredSize.height;
-        totalFixedSize += size;
+    // Create unified array with all necessary information
+    const childrenInfo = visibleChildren.map((child) => {
+      const explicitSize = child.getExplicitSize();
+
+      // If explicit size exists, use it
+      if (this.direction === "row" ? explicitSize.width : explicitSize.height) {
+        return {
+          child,
+          isFlexItem: child.getFlexGrow() > 0,
+          flexGrow: child.getFlexGrow(),
+          size:
+            this.direction === "row"
+              ? explicitSize.width!
+              : explicitSize.height!,
+          minSize:
+            this.direction === "row"
+              ? child.getMinWidth()
+              : child.getMinHeight(),
+          maxSize:
+            this.direction === "row"
+              ? child.getMaxWidth()
+              : child.getMaxHeight(),
+        };
       }
+
+      // Otherwise, get preferred size with appropriate constraints
+      const constraints: Size =
+        this.direction === "row"
+          ? { width: baseSpacePerChild, height: this.height }
+          : { width: this.width, height: baseSpacePerChild };
+
+      const preferredSize = child.getPreferredSize(constraints);
+
+      return {
+        child,
+        isFlexItem: child.getFlexGrow() > 0,
+        flexGrow: child.getFlexGrow(),
+        size:
+          this.direction === "row" ? preferredSize.width : preferredSize.height,
+        minSize:
+          this.direction === "row" ? child.getMinWidth() : child.getMinHeight(),
+        maxSize:
+          this.direction === "row" ? child.getMaxWidth() : child.getMaxHeight(),
+      };
     });
+
+    // Calculate total fixed size and total flex grow in one pass
+    const { totalFixedSize, totalFlexGrow } = childrenInfo.reduce(
+      (acc, info) => ({
+        totalFixedSize: acc.totalFixedSize + (info.isFlexItem ? 0 : info.size), // Changed from preferredSize to size
+        totalFlexGrow:
+          acc.totalFlexGrow + (info.isFlexItem ? info.flexGrow : 0),
+      }),
+      { totalFixedSize: 0, totalFlexGrow: 0 }
+    );
 
     // Calculate remaining space for flex items
     const remainingSpace = Math.max(0, availableSpace - totalFixedSize);
 
-    if (flexItems.length === 0) {
-      return {
-        sizes: visibleChildren.map((child) => {
-          const size =
-            this.direction === "row"
-              ? child.getPreferredSize().width
-              : child.getPreferredSize().height;
-          return size;
-        }),
-        remainingSpace,
-      };
-    }
-
-    // Calculate total flex grow
-    const totalFlexGrow = flexItems.reduce(
-      (sum, item) => sum + item.getFlexGrow(),
-      0
-    );
-
-    // Calculate sizes based on flex grow ratios
-    const sizes: number[] = [];
+    // Calculate final sizes
     let usedSpace = 0;
-
-    visibleChildren.forEach((child) => {
+    const sizes = childrenInfo.map((info) => {
       let size: number;
 
-      if (child.getFlexGrow() > 0) {
-        // For flex items, calculate size based on flex ratio
-        const flexRatio = child.getFlexGrow() / totalFlexGrow;
+      if (info.isFlexItem) {
+        const flexRatio = info.flexGrow / totalFlexGrow;
         const flexSpace = remainingSpace * flexRatio;
-
-        // Ensure size respects min/max constraints
-        const childMinSize =
-          this.direction === "row" ? child.getMinWidth() : child.getMinHeight();
-
-        // Use the flex space as the effective max size, bounded by component's max constraint
-        const componentMaxSize =
-          this.direction === "row" ? child.getMaxWidth() : child.getMaxHeight();
-        const childMaxSize = Math.min(componentMaxSize, flexSpace);
-
-        size = Math.floor(flexSpace);
-        size = Math.max(childMinSize, Math.min(childMaxSize, size));
+        const boundedFlexSpace = Math.min(info.maxSize, flexSpace);
+        size = Math.floor(Math.max(info.minSize, boundedFlexSpace));
       } else {
-        // For fixed items, use their preferred size
-        size =
-          this.direction === "row"
-            ? child.getPreferredSize().width
-            : child.getPreferredSize().height;
+        size = info.size; // Changed from preferredSize to size
       }
 
-      sizes.push(size);
       usedSpace += size;
+      return size;
     });
 
     return {

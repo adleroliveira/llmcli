@@ -1,5 +1,5 @@
-import { DebugLogger } from "../DebugLogger.js";
 import { TerminalBuffer } from "./TerminalBuffer.js";
+import { Size } from "./index.js";
 
 export interface ContentSpan<AttributeType = any> {
   text: string;
@@ -33,7 +33,6 @@ export abstract class ContentManager<AttributeType = any> {
     overflow: "hidden",
   };
   protected scrollOffset: number = 0;
-  protected cachedMeasurement: ContentMeasurement<AttributeType> | null = null;
 
   constructor(initialContent: string = "", style?: Partial<ContentStyle>) {
     this.content = initialContent;
@@ -42,20 +41,12 @@ export abstract class ContentManager<AttributeType = any> {
     }
   }
 
-  public measure(
-    availableWidth: number,
-    availableHeight: number
-  ): ContentMeasurement<AttributeType> {
-    this.cachedMeasurement = this.measureContent(
-      availableWidth,
-      availableHeight
-    );
-    return this.cachedMeasurement;
+  public measure(availableSize?: Size): ContentMeasurement<AttributeType> {
+    return this.measureContent(availableSize);
   }
 
   protected abstract measureContent(
-    availableWidth: number,
-    availableHeight: number
+    availableSize?: Size
   ): ContentMeasurement<AttributeType>;
 
   protected abstract parseContent(

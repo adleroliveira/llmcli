@@ -1,11 +1,14 @@
 import { TerminalComponent, ComponentProps } from "./TerminalComponent.js";
-import { FlexContainer } from "./components/FlexContainer.js";
+import {
+  FlexContainer,
+  FlexContainerProps,
+} from "./components/FlexContainer.js";
 import { Size } from "./index.js";
 import { HierarchicalLogger } from "./HierarchicalLogger.js";
 
-// HierarchicalLogger.shouldLog = false;
+HierarchicalLogger.shouldLog = false;
 
-export interface AppProps extends ComponentProps {
+export interface AppProps extends FlexContainerProps {
   title?: string;
   width: number;
   height: number;
@@ -26,12 +29,11 @@ export class App extends TerminalComponent {
     });
     this.title = props.title ?? "Terminal Application";
     this.rootContainer = new FlexContainer({
-      direction: "column",
-      align: "stretch",
-      justify: "start",
+      ...props,
       width: props.width,
       height: props.height,
       flexGrow: 1,
+      align: "stretch",
     });
     this.rootContainer.setLayoutConstraints({
       minWidth: props.width,
@@ -67,7 +69,7 @@ export class App extends TerminalComponent {
       this.isDirty = true;
       // Only emit if we're not already in an update cycle
       if (!TerminalComponent.updateInProgress) {
-        this.emit("renderNeeded", { screen: this });
+        this.onDirtyCallback?.();
       }
     }
   }
@@ -135,5 +137,10 @@ export class App extends TerminalComponent {
 
     const cursorPos = focusedComponent.getCursorPosition();
     return cursorPos;
+  }
+
+  public override destroy(): void {
+    this.onDirtyCallback = undefined;
+    super.destroy();
   }
 }
