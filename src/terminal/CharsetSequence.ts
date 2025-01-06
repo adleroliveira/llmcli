@@ -1,4 +1,4 @@
-import { VT100Sequence, ControlCharacter, SequenceType } from "./Command.js";
+import { ANSISequence, ControlCharacter, SequenceType } from "./Command.js";
 
 // Character set designators
 export enum CharsetDesignator {
@@ -9,7 +9,7 @@ export enum CharsetDesignator {
 }
 
 // Standard character sets
-enum CharacterSet {
+export enum CharacterSet {
   USASCII = "B", // US ASCII set
   UK = "A", // UK ASCII variant
   SpecialGraphics = "0", // Line drawing and symbols
@@ -27,13 +27,13 @@ enum CharacterSet {
   Swiss = "=", // Swiss
 }
 
-export class CharsetSequence extends VT100Sequence {
+export class CharsetSequence extends ANSISequence {
   constructor(
     raw: Uint8Array,
     public readonly designator: CharsetDesignator,
     public readonly charset: number
   ) {
-    super(SequenceType.ESCAPE, ControlCharacter.ESC, raw);
+    super(SequenceType.CHARSET, ControlCharacter.ESC, raw);
   }
 
   isValid(): boolean {
@@ -112,6 +112,4 @@ export class CharsetSequence extends VT100Sequence {
       charset.charCodeAt(0)
     );
   }
-
-  // Additional static helpers for G2 and G3 if needed
 }

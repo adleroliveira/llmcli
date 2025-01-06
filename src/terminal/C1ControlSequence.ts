@@ -1,4 +1,4 @@
-import { VT100Sequence, ControlCharacter, SequenceType } from "./Command.js";
+import { ANSISequence, ControlCharacter, SequenceType } from "./Command.js";
 
 // C1 control characters (0x80-0x9F)
 export const C1Control = {
@@ -45,7 +45,7 @@ export enum C1Mode {
   BIT_7 = "7-bit",
 }
 
-export class C1ControlSequence extends VT100Sequence {
+export class C1ControlSequence extends ANSISequence {
   private readonly control: readonly [number, number];
   private readonly mode: C1Mode;
 

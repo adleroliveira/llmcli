@@ -1,4 +1,4 @@
-import { VT100Sequence, SequenceType } from "./Command.js";
+import { ANSISequence, SequenceType } from "./Command.js";
 import { CSISequence, CSICommand } from "./CSISequence.js";
 import { TextSequence } from "./TextSequence.js";
 
@@ -51,9 +51,9 @@ export class ViewPort {
     this.height = dimensions.height;
   }
 
-  public process(sequence: VT100Sequence): VT100Sequence[] {
+  public process(sequence: ANSISequence): ANSISequence[] {
     const sequences = this.splitSequence(sequence);
-    const result: VT100Sequence[] = [];
+    const result: ANSISequence[] = [];
 
     for (const seq of sequences) {
       // Transform each sequence
@@ -67,13 +67,13 @@ export class ViewPort {
     return result;
   }
 
-  private splitSequence(sequence: VT100Sequence): VT100Sequence[] {
+  private splitSequence(sequence: ANSISequence): ANSISequence[] {
     if (sequence.type !== SequenceType.TEXT) {
       return [sequence];
     }
 
     const text = sequence.toString();
-    const result: VT100Sequence[] = [];
+    const result: ANSISequence[] = [];
     let currentText = "";
 
     for (let i = 0; i < text.length; i++) {
@@ -99,7 +99,7 @@ export class ViewPort {
     return result;
   }
 
-  private updateInternalCursor(sequence: VT100Sequence): void {
+  private updateInternalCursor(sequence: ANSISequence): void {
     if (sequence.type === SequenceType.CSI) {
       const csiSeq = sequence as CSISequence;
       switch (csiSeq.command) {
@@ -130,7 +130,7 @@ export class ViewPort {
     }
   }
 
-  private transformSequence(sequence: VT100Sequence): VT100Sequence[] {
+  private transformSequence(sequence: ANSISequence): ANSISequence[] {
     switch (sequence.type) {
       case SequenceType.CSI:
         return [this.transformCSISequence(sequence as CSISequence)];
@@ -156,7 +156,7 @@ export class ViewPort {
           ];
         } else if (sequence.type === SequenceType.TEXT) {
           // For regular text, if we're at the start of a line, position cursor first
-          const result: VT100Sequence[] = [];
+          const result: ANSISequence[] = [];
           if (this.cursor.x === 0) {
             result.push(
               CSISequence.create(CSICommand.CUP, [

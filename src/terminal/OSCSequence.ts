@@ -1,5 +1,5 @@
 import {
-  VT100Sequence,
+  ANSISequence,
   ControlCharacter,
   SequenceType,
   StringSequence,
@@ -28,7 +28,7 @@ export enum OSCCommand {
   SET_CURRENT_FILE = "9",
 }
 
-export class OSCSequence extends VT100Sequence implements StringSequence {
+export class OSCSequence extends ANSISequence implements StringSequence {
   private readonly oscControl: C1ControlSequence;
   private readonly stControl: C1ControlSequence;
 
@@ -38,8 +38,8 @@ export class OSCSequence extends VT100Sequence implements StringSequence {
     public readonly terminator: ControlCharacter.ST | ControlCharacter.BEL
   ) {
     super(SequenceType.OSC, ControlCharacter.OSC, raw);
-    this.oscControl = C1ControlSequence.create('OSC');
-    this.stControl = C1ControlSequence.create('ST');
+    this.oscControl = C1ControlSequence.create("OSC");
+    this.stControl = C1ControlSequence.create("ST");
   }
 
   static create(
@@ -51,17 +51,21 @@ export class OSCSequence extends VT100Sequence implements StringSequence {
     const content = [command, ...args].join(";");
 
     // Choose terminator
-    const terminator = useSTTerminator ? ControlCharacter.ST : ControlCharacter.BEL;
+    const terminator = useSTTerminator
+      ? ControlCharacter.ST
+      : ControlCharacter.BEL;
 
     // Create C1 controls
-    const oscControl = C1ControlSequence.create('OSC', C1Mode.BIT_7);
-    const stControl = C1ControlSequence.create('ST', C1Mode.BIT_7);
+    const oscControl = C1ControlSequence.create("OSC", C1Mode.BIT_7);
+    const stControl = C1ControlSequence.create("ST", C1Mode.BIT_7);
 
     // Build the raw byte sequence
     const bytes: number[] = [];
 
     // Add OSC sequence
-    const oscBytes = Array.from(new TextEncoder().encode(oscControl.toString()));
+    const oscBytes = Array.from(
+      new TextEncoder().encode(oscControl.toString())
+    );
     bytes.push(...oscBytes);
 
     // Add content bytes
@@ -71,17 +75,15 @@ export class OSCSequence extends VT100Sequence implements StringSequence {
 
     // Add terminator
     if (terminator === ControlCharacter.ST) {
-      const stBytes = Array.from(new TextEncoder().encode(stControl.toString()));
+      const stBytes = Array.from(
+        new TextEncoder().encode(stControl.toString())
+      );
       bytes.push(...stBytes);
     } else {
       bytes.push(ControlCharacter.BEL);
     }
 
-    return new OSCSequence(
-      new Uint8Array(bytes),
-      content,
-      terminator
-    );
+    return new OSCSequence(new Uint8Array(bytes), content, terminator);
   }
 
   // Convenience methods for common operations
@@ -101,7 +103,7 @@ export class OSCSequence extends VT100Sequence implements StringSequence {
     return OSCSequence.create(OSCCommand.SET_CURRENT_DIR, [dir]);
   }
 
-  getCommand(): { command: OSCCommand | string, args: string[] } {
+  getCommand(): { command: OSCCommand | string; args: string[] } {
     const parts = this.stringContent.split(";");
     const command = parts[0] as OSCCommand;
     const args = parts.slice(1);
@@ -118,9 +120,10 @@ export class OSCSequence extends VT100Sequence implements StringSequence {
 
   toString(): string {
     const prefix = this.oscControl.toString();
-    const suffix = this.terminator === ControlCharacter.ST
-      ? this.stControl.toString()
-      : String.fromCharCode(this.terminator);
+    const suffix =
+      this.terminator === ControlCharacter.ST
+        ? this.stControl.toString()
+        : String.fromCharCode(this.terminator);
 
     return `${prefix}${this.stringContent}${suffix}`;
   }

@@ -1,4 +1,4 @@
-import { Parameter, ControlCharacter, VT100Sequence } from "./Command.js";
+import { Parameter, ControlCharacter, ANSISequence } from "./Command.js";
 import { C1ControlSequence, C1Control, C1Mode } from "./C1ControlSequence.js";
 import { SimpleEscapeSequence } from "./SimpleEscapeSequence.js";
 import { CSISequence } from "./CSISequence.js";
@@ -6,6 +6,7 @@ import { OSCSequence } from "./OSCSequence.js";
 import { DCSSequence } from "./DCSSequence.js";
 import { TextSequence } from "./TextSequence.js";
 import { CharsetSequence, CharsetDesignator } from "./CharsetSequence.js";
+import { C0Sequence } from "./ControlSequence.js";
 import { DebugLogger } from "./DebugLogger.js";
 
 // Parser states
@@ -17,21 +18,6 @@ enum ParserState {
   DCS = "DCS", // Parsing DCS sequence
   CHARSET = "CHARSET", // Parsing charset sequence
   C1 = "C1", // Parsing C1 control
-}
-
-// TODO
-interface ParserMode {
-  bracketedPaste: boolean;
-  mouseTracking: boolean;
-  applicationCursor: boolean;
-  applicationKeypad: boolean;
-}
-
-// TODO
-interface ParserEvents {
-  sequence: (sequence: VT100Sequence) => void;
-  error: (error: Error) => void;
-  invalidSequence: (bytes: Uint8Array) => void;
 }
 
 interface ParserOptions {
@@ -48,7 +34,7 @@ export class VT100Parser {
   private buffer: number[] = [];
   private params: string[] = [];
   private intermediates: number[] = [];
-  private sequences: VT100Sequence[] = [];
+  private sequences: ANSISequence[] = [];
   private stringContent: string = "";
   private textBuffer: number[] = [];
   private incompleteBuffer: number[] = [];
@@ -70,7 +56,7 @@ export class VT100Parser {
   ) {}
 
   // Main parse method
-  parse(data: Uint8Array): Generator<VT100Sequence, void, undefined> {
+  parse(data: Uint8Array): Generator<ANSISequence, void, undefined> {
     // If we have a saved state from an incomplete sequence, restore it
     if (this.savedState) {
       this.state = this.savedState.state;
@@ -89,7 +75,7 @@ export class VT100Parser {
 
   private *_parseGenerator(
     data: Uint8Array
-  ): Generator<VT100Sequence, void, undefined> {
+  ): Generator<ANSISequence, void, undefined> {
     for (let i = 0; i < data.length; i++) {
       const byte = data[i];
 
@@ -121,7 +107,7 @@ export class VT100Parser {
    * Parse a string input directly
    * This is useful when receiving data from terminal output as string
    */
-  parseString(input: string): Generator<VT100Sequence, void, undefined> {
+  parseString(input: string): Generator<ANSISequence, void, undefined> {
     return this.parse(this.stringToBytes(input));
   }
   /**
@@ -275,7 +261,7 @@ export class VT100Parser {
     return new TextSequence(bytes, text);
   }
 
-  private processByte(byte: number): VT100Sequence | null {
+  private processByte(byte: number): ANSISequence | null {
     switch (this.state) {
       case ParserState.GROUND:
         return this.processGround(byte);
@@ -300,7 +286,7 @@ export class VT100Parser {
     }
   }
 
-  private processGround(byte: number): VT100Sequence | null {
+  private processGround(byte: number): ANSISequence | null {
     // If we see an ESC character, flush text and start escape sequence
     if (byte === ControlCharacter.ESC) {
       const textSequence = this.flushTextBuffer();
@@ -435,7 +421,18 @@ export class VT100Parser {
     return null;
   }
 
-  private processEscape(byte: number): VT100Sequence | null {
+  private processEscape(byte: number): ANSISequence | null {
+    if (this.buffer.length === 1 && this.buffer[0] === ControlCharacter.ESC) {
+      // If the next byte is not a valid sequence starter, treat it as standalone ESC
+      if ((byte < 0x20 || byte > 0x7e) && byte !== ControlCharacter.ESC) {
+        const sequence = new C0Sequence(ControlCharacter.ESC);
+        this.reset();
+        // Push the current byte back to text buffer since it's not part of a sequence
+        this.textBuffer.push(byte);
+        return sequence;
+      }
+    }
+
     this.buffer.push(byte);
 
     // Handle standard escape sequences
@@ -491,7 +488,7 @@ export class VT100Parser {
     }
   }
 
-  private processCSI(byte: number): VT100Sequence | null {
+  private processCSI(byte: number): ANSISequence | null {
     this.buffer.push(byte);
 
     // If we get an ESC while processing CSI, it's the start of a new sequence
@@ -553,7 +550,7 @@ export class VT100Parser {
     return null;
   }
 
-  private processOSC(byte: number): VT100Sequence | null {
+  private processOSC(byte: number): ANSISequence | null {
     this.buffer.push(byte);
 
     // Check for BEL terminator
@@ -601,7 +598,7 @@ export class VT100Parser {
     return null;
   }
 
-  private processDCS(byte: number): VT100Sequence | null {
+  private processDCS(byte: number): ANSISequence | null {
     this.buffer.push(byte);
 
     // String terminator
@@ -640,7 +637,7 @@ export class VT100Parser {
     return null;
   }
 
-  private processCharset(byte: number): VT100Sequence | null {
+  private processCharset(byte: number): ANSISequence | null {
     this.buffer.push(byte);
 
     const designator = String.fromCharCode(this.buffer[1]);
@@ -653,7 +650,7 @@ export class VT100Parser {
     return sequence;
   }
 
-  private processC1Control(byte: number): VT100Sequence | null {
+  private processC1Control(byte: number): ANSISequence | null {
     // Find the C1 control type from the byte
     const controlType = Object.entries(C1Control).find(
       ([_, codes]) => codes[0] === byte

@@ -1,5 +1,5 @@
 import {
-  VT100Sequence,
+  ANSISequence,
   ParameterizedSequence,
   IntermediateBytes,
   Parameter,
@@ -9,7 +9,7 @@ import {
 } from "./Command.js";
 
 export class DCSSequence
-  extends VT100Sequence
+  extends ANSISequence
   implements ParameterizedSequence, IntermediateBytes, StringSequence
 {
   constructor(

@@ -1,4 +1,4 @@
-import { VT100Sequence } from "./Command.js";
+import { ANSISequence } from "./Command.js";
 import { CSISequence } from "./CSISequence.js";
 import { TextSequence } from "./TextSequence.js";
 import { TerminalController } from "./TerminalController.js";
@@ -29,7 +29,7 @@ export class PromptStateManager {
     return { ...this.state };
   }
 
-  public processSequence(sequence: VT100Sequence): VT100Sequence {
+  public processSequence(sequence: ANSISequence): ANSISequence {
     if (sequence instanceof CSISequence && sequence.command === "ED") {
       this.state.hasDisplayBeenCleared = true;
       return sequence;

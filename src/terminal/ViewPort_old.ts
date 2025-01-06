@@ -1,5 +1,5 @@
 import { VT100Parser } from "./VT100Parser.js";
-import { VT100Sequence, SequenceType, ControlCharacter } from "./Command.js";
+import { ANSISequence, SequenceType, ControlCharacter } from "./Command.js";
 import { CSISequence, CSICommand } from "./CSISequence.js";
 
 interface ViewPortDimensions {
@@ -182,7 +182,7 @@ export class ViewPort {
     }
   }
 
-  private processSequence(sequence: VT100Sequence): void {
+  private processSequence(sequence: ANSISequence): void {
     if (sequence instanceof CSISequence) {
       if (CSISequence.isCursorCommand(sequence)) {
         this.processCursorCommand(sequence);

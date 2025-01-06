@@ -2,7 +2,7 @@ import { EventEmitter } from "events";
 import * as pty from "node-pty";
 import { VT100Parser } from "./VT100Parser.js";
 import { VT100Formatter } from "./VT100Formatter.js";
-import { VT100Sequence } from "./Command.js";
+import { ANSISequence } from "./Command.js";
 import { CursorStateManager, CursorState } from "./CursorStateManager.js";
 import { ViewportStateManager, ViewportState } from "./ViewportStateManager.js";
 import { CharsetStateManager, CharsetState } from "./CharsetStateManager.js";
@@ -220,9 +220,9 @@ export class TerminalController extends EventEmitter {
   }
 
   private handleSequence(
-    sequence: VT100Sequence,
+    sequence: ANSISequence,
     skipRecursion: boolean = false
-  ): VT100Sequence {
+  ): ANSISequence {
     // Update all state managers except prompt
     this.charsetStateManager.processSequence(sequence);
     this.modeStateManager.processSequence(sequence);
@@ -241,13 +241,13 @@ export class TerminalController extends EventEmitter {
     return sequence;
   }
 
-  public sendSequence(sequence: VT100Sequence): void {
+  public sendSequence(sequence: ANSISequence): void {
     this.setActiveStream();
     process.stdout.write(sequence.toString());
   }
 
   public async sendSequenceWithResponse(
-    sequence: VT100Sequence,
+    sequence: ANSISequence,
     responsePattern: RegExp,
     timeout?: number
   ): Promise<RegExpMatchArray> {

@@ -1,4 +1,4 @@
-import { VT100Sequence } from "./Command.js";
+import { ANSISequence } from "./Command.js";
 import { CharsetSequence, CharsetDesignator } from "./CharsetSequence.js";
 import { SimpleEscapeSequence } from "./SimpleEscapeSequence.js";
 
@@ -21,7 +21,7 @@ export class CharsetStateManager {
     return { ...this.state };
   }
 
-  public processSequence(sequence: VT100Sequence): void {
+  public processSequence(sequence: ANSISequence): void {
     if (sequence instanceof CharsetSequence) {
       // Handle charset designation
       switch (sequence.designator) {

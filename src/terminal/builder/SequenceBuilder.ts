@@ -1,7 +1,7 @@
-import { VT100Sequence } from "../Command.js";
+import { ANSISequence } from "../Command.js";
 
 export interface SequenceProducer {
-  toSequence(): VT100Sequence;
+  toSequence(): ANSISequence;
 }
 
 export class SequenceBuilder {
@@ -18,7 +18,16 @@ export class SequenceBuilder {
 
   build(): string {
     return this.sequences
-      .map(producer => producer.toSequence().toString())
-      .join('');
+      .map((producer) => producer.toSequence().toString())
+      .join("");
+  }
+
+  clear(): void {
+    this.sequences = [];
+  }
+
+  addAll(sequences: SequenceProducer[]): this {
+    sequences.forEach((sequence) => this.add(sequence));
+    return this;
   }
 }

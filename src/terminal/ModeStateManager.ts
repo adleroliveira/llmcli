@@ -1,4 +1,4 @@
-import { VT100Sequence } from "./Command.js";
+import { ANSISequence } from "./Command.js";
 import { CSISequence } from "./CSISequence.js";
 import {
   SimpleEscapeSequence,
@@ -45,7 +45,7 @@ export class ModeStateManager {
     return { ...this.state };
   }
 
-  public processSequence(sequence: VT100Sequence): void {
+  public processSequence(sequence: ANSISequence): void {
     // Handle Simple Escape Sequences
     if (sequence instanceof SimpleEscapeSequence) {
       const command = sequence.getCommandType();
@@ -143,7 +143,7 @@ export class ModeStateManager {
     };
   }
 
-  public setup(): VT100Sequence {
+  public setup(): ANSISequence {
     const ris1 = SimpleEscapeSequence.create(SimpleEscapeCommand.RIS);
     return ris1;
   }

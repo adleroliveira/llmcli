@@ -1,4 +1,4 @@
-import { VT100Sequence } from "./Command.js";
+import { ANSISequence } from "./Command.js";
 import { CSISequence } from "./CSISequence.js";
 import { TextSequence } from "./TextSequence.js";
 import { TerminalController } from "./TerminalController.js";
@@ -47,7 +47,7 @@ export class LineBufferManager extends EventEmitter {
     return { ...this.state };
   }
 
-  public processSequence(sequence: VT100Sequence): void {
+  public processSequence(sequence: ANSISequence): void {
     if (sequence instanceof TextSequence) {
       this.handleTextSequence(sequence);
     } else if (sequence instanceof CSISequence) {

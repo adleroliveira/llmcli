@@ -1,4 +1,4 @@
-import { VT100Sequence, ControlCharacter, SequenceType } from "./Command.js";
+import { ANSISequence, ControlCharacter, SequenceType } from "./Command.js";
 import { CSISequence } from "./CSISequence.js";
 import { TerminalController } from "./TerminalController.js";
 import { ViewportStateManager } from "./ViewportStateManager.js";
@@ -36,7 +36,7 @@ export class CursorStateManager {
     return { ...this.state };
   }
 
-  public processSequence(sequence: VT100Sequence): void {
+  public processSequence(sequence: ANSISequence): void {
     if (sequence instanceof CSISequence) {
       if (CSISequence.isCursorCommand(sequence)) {
         this.processCursorCommand(sequence);

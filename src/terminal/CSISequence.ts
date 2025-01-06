@@ -1,5 +1,5 @@
 import {
-  VT100Sequence,
+  ANSISequence,
   ParameterizedSequence,
   IntermediateBytes,
   Parameter,
@@ -52,6 +52,26 @@ export enum CSICommand {
   // Screen commands
   DECSLRM = "s", // Set Left and Right Margins
   DECALN = "#8", // Screen Alignment Pattern
+
+  // Additional screen commands
+  DECSTR = "!p", // Soft terminal reset
+  DECRQM = "$p", // Request Mode - DEC Private Mode
+  DECDSR = "$q", // Device Status Report - DEC Specific
+  DECSCUSR = "q", // Set Cursor Style
+
+  // Additional window commands
+  DECCRA = "$v", // Copy Rectangular Area
+  DECFRA = "$x", // Fill Rectangular Area
+  DECERA = "$z", // Erase Rectangular Area
+
+  // Additional mode commands
+  DECSCA = '"q', // Select Character Protection Attribute
+  DECSCL = '"p', // Set Conformance Level
+  DECLL = "q", // Load LEDs
+
+  DECRQPSR = "$w", // Request Presentation State Report
+  DECSNLS = "*|", // Set Number of Lines per Screen
+  DECSLPP = "t", // Set Lines Per Page
 }
 
 export enum SGRAttribute {
@@ -137,7 +157,7 @@ export class TextFormatter {
 }
 
 export class CSISequence
-  extends VT100Sequence
+  extends ANSISequence
   implements ParameterizedSequence, IntermediateBytes
 {
   constructor(
@@ -154,21 +174,17 @@ export class CSISequence
     params: (number | null)[] = [],
     isPrivate: boolean = false
   ): CSISequence {
-    // Convert params to Parameter array
     const parameters: Parameter[] = params.map((value) => ({
       value,
       private: isPrivate,
     }));
 
-    // Build the raw byte sequence
-    const bytes: number[] = [];
+    const bytes: number[] = [0x1b, 0x5b]; // ESC [
 
-    // Add parameter bytes
     if (isPrivate) {
       bytes.push(0x3f); // '?'
     }
 
-    // Add parameter values and separators
     parameters.forEach((param, index) => {
       if (index > 0) {
         bytes.push(0x3b); // ';'
@@ -181,14 +197,12 @@ export class CSISequence
       }
     });
 
-    // Add final byte
     bytes.push(command.charCodeAt(0));
 
-    // Create the sequence
     return new CSISequence(
       new Uint8Array(bytes),
       parameters,
-      [], // No intermediate bytes
+      [],
       command.charCodeAt(0)
     );
   }
@@ -202,16 +216,16 @@ export class CSISequence
 
   toString(): string {
     const params = this.parameters
-      .map((p) => {
-        // Handle null value case
-        const paramValue = p.value === null ? "" : p.value.toString();
-        return p.private ? `?${paramValue}` : paramValue;
-      })
+      .map(
+        (p) =>
+          (p.private ? "?" : "") + (p.value === null ? "" : p.value.toString())
+      )
       .join(";");
-    const intermediate = String.fromCharCode(...this.intermediateBytes);
-    return `\x1B[${params}${intermediate}${String.fromCharCode(
-      this.finalByte
-    )}`;
+    return `\x1B[${params}${
+      this.intermediateBytes.length
+        ? String.fromCharCode(...this.intermediateBytes)
+        : ""
+    }${String.fromCharCode(this.finalByte)}`;
   }
 
   static fromParameters(
@@ -279,13 +293,20 @@ export class CSISequence
     );
   }
 
-  private static isIntermediateByte(byte: number): boolean {
-    return byte >= 0x20 && byte <= 0x2f;
-  }
+  static isWindowCommand = (sequence: CSISequence): boolean => {
+    const finalByte = sequence.finalByte;
+    return finalByte === 0x74; // 't' - Window Manipulation (XTWINOPS)
+  };
 
-  private static isFinalByte(byte: number): boolean {
-    return byte >= 0x40 && byte <= 0x7e;
-  }
+  static isInsertDeleteCommand = (sequence: CSISequence): boolean => {
+    const finalByte = sequence.finalByte;
+    return [
+      0x50, // 'P' - Delete Character (DCH)
+      0x4d, // 'M' - Delete Line (DL)
+      0x40, // '@' - Insert Character (ICH)
+      0x4c, // 'L' - Insert Line (IL)
+    ].includes(finalByte);
+  };
 
   private static parseParameters(
     bytes: Uint8Array,
@@ -299,16 +320,14 @@ export class CSISequence
     for (let i = startIndex; i < endIndex; i++) {
       const byte = bytes[i];
 
-      // Check for private parameter marker
+      // Check for private parameter marker ('?')
       if (byte === 0x3f && i === startIndex) {
-        // '?'
         isPrivate = true;
         continue;
       }
 
-      // Parameter separator
+      // Parameter separator (';')
       if (byte === 0x3b) {
-        // ';'
         params.push({
           value: currentValue.length ? parseInt(currentValue) : null,
           private: isPrivate,
@@ -317,9 +336,7 @@ export class CSISequence
         continue;
       }
 
-      // Accumulate numeric characters
-      if (byte >= 0x30 && byte <= 0x39) {
-        // '0' to '9'
+      if (ANSISequence.isParameterByte(byte) && byte >= 0x30 && byte <= 0x39) {
         currentValue += String.fromCharCode(byte);
       }
     }
@@ -337,13 +354,15 @@ export class CSISequence
 
   static from(bytes: Uint8Array): CSISequence {
     if (bytes.length < 2) {
-      throw new Error("Invalid CSI sequence: too short");
+      throw new Error(
+        `Invalid CSI sequence: length ${bytes.length} is less than minimum 2 bytes`
+      );
     }
 
     // Find the final byte
     let finalByteIndex = -1;
     for (let i = bytes.length - 1; i >= 0; i--) {
-      if (this.isFinalByte(bytes[i])) {
+      if (ANSISequence.isFinalByte(bytes[i])) {
         finalByteIndex = i;
         break;
       }
@@ -357,7 +376,7 @@ export class CSISequence
     const intermediateBytes: number[] = [];
     let parameterEndIndex = 0;
     for (let i = 0; i < finalByteIndex; i++) {
-      if (this.isIntermediateByte(bytes[i])) {
+      if (ANSISequence.isIntermediateByte(bytes[i])) {
         intermediateBytes.push(bytes[i]);
       } else {
         parameterEndIndex = i + 1;
@@ -400,28 +419,31 @@ export class CSISequence
   }
 
   get command(): string {
-    const commandMap: { [key: number]: string } = {
-      0x41: "CUU", // Cursor Up
-      0x42: "CUD", // Cursor Down
-      0x43: "CUF", // Cursor Forward
-      0x44: "CUB", // Cursor Back
-      0x45: "CNL", // Cursor Next Line
-      0x46: "CPL", // Cursor Previous Line
-      0x47: "CHA", // Cursor Horizontal Absolute
-      0x48: "CUP", // Cursor Position
-      0x4a: "ED", // Erase in Display
-      0x4b: "EL", // Erase in Line
-      0x53: "SU", // Scroll Up
-      0x54: "SD", // Scroll Down
-      0x68: "SM", // Set Mode
-      0x6c: "RM", // Reset Mode
-      0x6d: "SGR", // Select Graphic Rendition
-      0x72: "DECSTBM", // Set Scrolling Region
-      0x73: "SCOSC", // Save Cursor Position
-      0x75: "SCORC", // Restore Cursor Position
+    const commandMap: { [key: number]: CSICommand } = {
+      0x41: CSICommand.CUU, // Cursor Up
+      0x42: CSICommand.CUD, // Cursor Down
+      0x43: CSICommand.CUF, // Cursor Forward
+      0x44: CSICommand.CUB, // Cursor Back
+      0x45: CSICommand.CNL, // Cursor Next Line
+      0x46: CSICommand.CPL, // Cursor Previous Line
+      0x47: CSICommand.CHA, // Cursor Horizontal Absolute
+      0x48: CSICommand.CUP, // Cursor Position
+      0x4a: CSICommand.ED, // Erase in Display
+      0x4b: CSICommand.EL, // Erase in Line
+      0x53: CSICommand.SU, // Scroll Up
+      0x54: CSICommand.SD, // Scroll Down
+      0x68: CSICommand.SM, // Set Mode
+      0x6c: CSICommand.RM, // Reset Mode
+      0x6d: CSICommand.SGR, // Select Graphic Rendition
+      0x72: CSICommand.DECSTBM, // Set Scrolling Region
+      0x73: CSICommand.SCOSC, // Save Cursor Position
+      0x75: CSICommand.SCORC, // Restore Cursor Position
     };
 
-    return commandMap[this.finalByte] || String.fromCharCode(this.finalByte);
+    return (
+      commandMap[this.finalByte] ||
+      (String.fromCharCode(this.finalByte) as CSICommand)
+    );
   }
 
   includesParam(value: number): boolean {

@@ -8,7 +8,7 @@ import {
   SequenceBuilder,
   Text,
 } from "./builder/index.js";
-import { VT100Sequence } from "./Command.js";
+import { ANSISequence } from "./Command.js";
 import { PositionTranslator } from "./PositionTranslator.js";
 import { DebugLogger } from "./DebugLogger.js";
 import { VT100Formatter } from "./VT100Formatter.js";

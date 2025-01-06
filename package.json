@@ -12,7 +12,7 @@
     "dev": "node --loader ts-node/esm src/index.ts",
     "watch": "tsc -w",
     "start": "node dist/index.js",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+    "terminal": "node --loader ts-node/esm --trace-uncaught src/terminal/layout/test.ts"
   },
   "keywords": [
     "CLI",

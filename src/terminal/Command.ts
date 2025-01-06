@@ -86,6 +86,13 @@ export enum SequenceType {
   MOUSE, // Mouse tracking sequences
   CHARSET, // Character set selection
   MODE, // Mode setting/resetting
+  CUP, // Cursor Position
+  CUU, // Cursor Up
+  CUD, // Cursor Down
+  CUF, // Cursor Forward
+  CUB, // Cursor Backward
+  ED, // Erase in Display
+  EL, // Erase in Line
 }
 
 // Utility type for mouse encoding modes
@@ -166,7 +173,7 @@ export interface MouseSequence extends ParameterizedSequence {
 }
 
 // Base abstract class with common functionality
-export abstract class VT100Sequence implements BaseSequence {
+export abstract class ANSISequence implements BaseSequence {
   constructor(
     public readonly type: SequenceType,
     public readonly controlChar: ControlCharacter,
@@ -176,7 +183,6 @@ export abstract class VT100Sequence implements BaseSequence {
   abstract isValid(): boolean;
   abstract toString(): string;
 
-  // Common validation methods
   protected isIntermediateByte(byte: number): boolean {
     return byte >= 0x20 && byte <= 0x2f;
   }
@@ -185,7 +191,58 @@ export abstract class VT100Sequence implements BaseSequence {
     return byte >= 0x40 && byte <= 0x7e;
   }
 
+  protected static isIntermediateByte(byte: number): boolean {
+    return byte >= 0x20 && byte <= 0x2f;
+  }
+
+  protected static isFinalByte(byte: number): boolean {
+    return byte >= 0x40 && byte <= 0x7e;
+  }
+
   protected isParameterByte(byte: number): boolean {
-    return byte >= 0x30 && byte <= 0x3f; // includes digits, ;:<?=
+    return byte >= 0x30 && byte <= 0x3f;
+  }
+
+  protected static isParameterByte(byte: number): boolean {
+    return byte >= 0x30 && byte <= 0x3f;
+  }
+
+  protected isControlByte(byte: number): boolean {
+    return byte <= 0x1f || byte === 0x7f;
+  }
+
+  protected isC1ControlByte(byte: number): boolean {
+    return byte >= 0x80 && byte <= 0x9f;
+  }
+
+  protected get length(): number {
+    return this.raw.length;
+  }
+
+  protected toHexString(): string {
+    return Array.from(this.raw)
+      .map((byte) => `0x${byte.toString(16).padStart(2, "0")}`)
+      .join(" ");
+  }
+
+  protected parseParameters(defaultValue: number = 1): number[] {
+    const params: number[] = [];
+    let currentParam = "";
+
+    for (const byte of this.raw) {
+      if (byte === 0x3b) {
+        // semicolon
+        params.push(currentParam ? parseInt(currentParam, 10) : defaultValue);
+        currentParam = "";
+      } else if (this.isParameterByte(byte) && byte >= 0x30 && byte <= 0x39) {
+        currentParam += String.fromCharCode(byte);
+      }
+    }
+
+    if (currentParam || params.length === 0) {
+      params.push(currentParam ? parseInt(currentParam, 10) : defaultValue);
+    }
+
+    return params;
   }
 }

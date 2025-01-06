@@ -5,6 +5,8 @@ import {
   SGRSequence,
 } from "./Command.js";
 
+import { CharsetSequence } from "./CharsetSequence.js";
+
 export enum VerbosityLevel {
   MINIMAL, // Just command codes (e.g., "HTS")
   STANDARD, // Command codes with short descriptions (e.g., "HTS - Horizontal Tab Set")
@@ -27,6 +29,37 @@ export class VT100Formatter {
       .filter(([key]) => isNaN(Number(key)))
       .map(([key, value]) => [value, key])
   );
+
+  private static charsetDescriptions = new Map([
+    ["(", { short: "G0", full: "G0 - Designate G0 Character Set" }],
+    [")", { short: "G1", full: "G1 - Designate G1 Character Set" }],
+    ["*", { short: "G2", full: "G2 - Designate G2 Character Set" }],
+    ["+", { short: "G3", full: "G3 - Designate G3 Character Set" }],
+  ]);
+
+  private static charsetMappings = new Map([
+    ["B", { short: "US", full: "US ASCII" }],
+    ["0", { short: "DEC", full: "DEC Special Character and Line Drawing Set" }],
+    ["1", { short: "ALT", full: "Alternative Character ROM" }],
+    [
+      "2",
+      { short: "ALT_SP", full: "Alternative Character ROM Special Graphics" },
+    ],
+    ["A", { short: "UK", full: "UK National Character Set" }],
+    ["4", { short: "NL", full: "Dutch National Character Set" }],
+    ["5", { short: "FI", full: "Finnish National Character Set" }],
+    ["C", { short: "FI2", full: "Finnish National Character Set 2" }],
+    ["R", { short: "FR", full: "French National Character Set" }],
+    ["Q", { short: "FR_CA", full: "French Canadian National Character Set" }],
+    ["K", { short: "DE", full: "German National Character Set" }],
+    ["Y", { short: "IT", full: "Italian National Character Set" }],
+    ["E", { short: "NW", full: "Norwegian/Danish National Character Set" }],
+    ["6", { short: "NW2", full: "Norwegian/Danish National Character Set 2" }],
+    ["Z", { short: "ES", full: "Spanish National Character Set" }],
+    ["7", { short: "SE", full: "Swedish National Character Set" }],
+    ["H", { short: "SE2", full: "Swedish National Character Set 2" }],
+    ["=", { short: "CH", full: "Swiss National Character Set" }],
+  ]);
 
   private static c1ControlDescriptions = new Map([
     [0x80, { short: "PAD", full: "PAD - Padding Character" }],
@@ -263,11 +296,17 @@ export class VT100Formatter {
     return verbosity === VerbosityLevel.MINIMAL ? desc.short : desc.full;
   }
 
-  private static formatParameter(param: Parameter): string {
+  private static formatParameter(param: Parameter, command?: string): string {
     const parts = [];
     const value = param.value?.toString() || "null";
 
-    if (param.private) {
+    // First check if this is a mode command with a known private mode
+    const isKnownPrivateMode =
+      (command === "h" || command === "l") &&
+      this.modeDescriptions.has(`?${value}`);
+
+    // Then check if parameter is marked as private
+    if (param.private || isKnownPrivateMode) {
       parts.push(`?${value}`);
     } else {
       parts.push(value);
@@ -280,9 +319,14 @@ export class VT100Formatter {
     return parts.join("");
   }
 
-  private static formatParameters(params: Parameter[]): string {
+  private static formatParameters(
+    params: Parameter[],
+    command?: string
+  ): string {
     if (!params.length) return "";
-    return params.map((param) => this.formatParameter(param)).join(";");
+    return params
+      .map((param) => this.formatParameter(param, command))
+      .join(";");
   }
 
   private static formatOSCData(raw: Uint8Array): string {
@@ -361,6 +405,53 @@ export class VT100Formatter {
       if (attrs) {
         parts.push(`{${attrs}}`);
       }
+    }
+
+    if (sequence.type === SequenceType.CHARSET) {
+      const charsetSeq = sequence as CharsetSequence;
+      const designator = charsetSeq.designator;
+      const finalByte = String.fromCharCode(charsetSeq.charset);
+
+      const designatorDesc = this.charsetDescriptions.get(designator);
+      const charsetDesc = this.charsetMappings.get(finalByte);
+
+      const parts = ["CHARSET"];
+
+      // Add command description
+      if (designatorDesc) {
+        parts.push(
+          `<${
+            options.verbosity === VerbosityLevel.MINIMAL
+              ? designatorDesc.short
+              : designatorDesc.full
+          }>`
+        );
+      } else {
+        parts.push(`<UNKNOWN_DESIGNATOR_${designator}>`);
+      }
+
+      // Add charset mapping
+      if (charsetDesc) {
+        parts.push(
+          `[${
+            options.verbosity === VerbosityLevel.MINIMAL
+              ? charsetDesc.short
+              : charsetDesc.full
+          }]`
+        );
+      } else {
+        parts.push(`[UNKNOWN_CHARSET_${finalByte}]`);
+      }
+
+      // Add raw bytes if requested
+      if (options.showRawBytes) {
+        const rawBytes = Array.from(sequence.raw)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(" ");
+        parts.push(`(${rawBytes})`);
+      }
+
+      return parts.join("");
     }
 
     // Raw bytes

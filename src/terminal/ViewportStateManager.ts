@@ -1,4 +1,4 @@
-import { VT100Sequence } from "./Command.js";
+import { ANSISequence } from "./Command.js";
 import { CSISequence } from "./CSISequence.js";
 import { TerminalController } from "./TerminalController.js";
 
@@ -28,7 +28,7 @@ export class ViewportStateManager {
     return { ...this.state };
   }
 
-  public processSequence(sequence: VT100Sequence): void {
+  public processSequence(sequence: ANSISequence): void {
     if (sequence instanceof CSISequence) {
       switch (sequence.finalByte) {
         case 0x72: // 'r' - DECSTBM (Set Top and Bottom Margins)

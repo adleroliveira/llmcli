@@ -1,6 +1,6 @@
-import { VT100Sequence, SequenceType, ControlCharacter } from "./Command.js";
+import { ANSISequence, SequenceType, ControlCharacter } from "./Command.js";
 
-export class TextSequence extends VT100Sequence {
+export class TextSequence extends ANSISequence {
   readonly type = SequenceType.TEXT;
   readonly controlChar = ControlCharacter.NUL; // or perhaps undefined
 
