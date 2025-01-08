@@ -1,5 +1,5 @@
 import { FlexContainer, FlexContainerProps } from "./FlexContainer.js";
-import { TerminalBuffer, SGRColor } from "../TerminalBuffer.js";
+import { SGRColor } from "../TerminalBuffer.js";
 import { Size, Position } from "../index.js";
 
 export type BorderStyle = "none" | "single" | "double" | "rounded";
@@ -26,7 +26,6 @@ export class Container extends FlexContainer {
   protected titleStyle: TitleStyle;
   protected margin: number;
   protected padding: number;
-  protected contentBuffer: TerminalBuffer;
 
   constructor(props: ContainerProps = {}) {
     super(props);
@@ -36,73 +35,66 @@ export class Container extends FlexContainer {
     this.borderStyle = props.borderStyle ?? "single";
     this.margin = props.margin ?? 0;
     this.padding = props.padding ?? 0;
-
-    this.contentBuffer = new TerminalBuffer(0, 0);
-    this.updateContentArea();
   }
 
-  protected layoutChildren(): void {
-    const contentDimensions = this.getContentDimensions();
-
-    // Store original layout constraints
-    const originalConstraints = {
-      minWidth: this.getMinWidth(),
-      maxWidth: this.getMaxWidth(),
-      minHeight: this.getMinHeight(),
-      maxHeight: this.getMaxHeight(),
-    };
-
-    // Temporarily adjust layout constraints to account for borders and padding
-    this.setLayoutConstraints({
-      minWidth: contentDimensions.width,
-      maxWidth: contentDimensions.width,
-      minHeight: contentDimensions.height,
-      maxHeight: contentDimensions.height,
-    });
-
-    // Call FlexContainer's layout logic
-    super.layoutChildren();
-
-    // Restore original layout constraints
-    this.setLayoutConstraints(originalConstraints);
-
-    // Adjust children positions to account for margins and borders
-    const offset = this.getContentOffset();
-    this.children.forEach((child) => {
-      if (child.visible) {
-        child.setPosition(child.x + offset.x, child.y + offset.y);
-      }
-    });
-  }
-
-  protected getContentOffset(): Position {
-    const borderOffset = this.borderStyle === "none" ? 0 : 1;
-    return {
-      x: this.margin + borderOffset + this.padding,
-      y: this.margin + borderOffset + this.padding,
-    };
-  }
-
-  protected getContentDimensions(): Size {
-    return {
-      width: this.getContentWidth(),
-      height: this.getContentHeight(),
-    };
+  public getBorderSpace() {
+    const hasBorder = this.borderStyle !== "none";
+    const borderWidth = hasBorder ? 2 : 0;
+    return this.margin * 2 + borderWidth + this.padding * 2;
   }
 
   protected render(): void {
-    // First call super to render the flex content
+    // Clear buffer
+    this.buffer.clear();
+
+    // Render flex content
     super.render();
 
-    // Then draw borders on top
-    const availWidth = this.width - this.margin * 2;
-    const availHeight = this.height - this.margin * 2;
-
-    if (availWidth <= 0 || availHeight <= 0) return;
-
+    // Draw borders if needed
     if (this.borderStyle !== "none") {
-      this.drawBorders(availWidth, availHeight);
+      const availWidth = this.width - this.margin * 2;
+      const availHeight = this.height - this.margin * 2;
+
+      if (availWidth > 0 && availHeight > 0) {
+        this.drawBorders(availWidth, availHeight);
+      }
     }
+  }
+
+  protected layoutChildren(): void {
+    const borderSpace = this.getBorderSpace();
+
+    // Layout children
+    super.layoutChildren();
+
+    // Adjust children positions for border and padding
+    this.children.forEach((child) => {
+      const position = child.getPosition();
+      child.setPosition(
+        position.x + borderSpace / 2,
+        position.y + borderSpace / 2
+      );
+    });
+  }
+
+  protected measureContent(availableSpace: Size): Size {
+    // Calculate exact space needed for borders
+    const borderSpace = this.getBorderSpace();
+
+    // Adjust available space for content measurement
+    const contentAvailableSpace = {
+      width: Math.max(0, availableSpace.width - borderSpace),
+      height: Math.max(0, availableSpace.height - borderSpace),
+    };
+
+    // Measure actual content size needed
+    const contentSize = super.measureContent(contentAvailableSpace);
+
+    // Calculate final size - only add the necessary border space
+    return {
+      width: Math.min(availableSpace.width, contentSize.width + borderSpace),
+      height: Math.min(availableSpace.height, contentSize.height + borderSpace),
+    };
   }
 
   private drawBorders(availWidth: number, availHeight: number): void {
@@ -120,12 +112,13 @@ export class Container extends FlexContainer {
 
     // Draw vertical borders
     for (let y = 1; y < availHeight - 1; y++) {
-      this.buffer.setCharacter(this.margin, y + this.margin, chars.v);
-      this.buffer.setCharacter(
-        availWidth - 1 + this.margin,
-        y + this.margin,
-        chars.v
-      );
+      // Skip the corners
+      const leftX = this.margin;
+      const rightX = availWidth - 1 + this.margin;
+      const currentY = y + this.margin;
+
+      this.buffer.setCharacter(leftX, currentY, chars.v);
+      this.buffer.setCharacter(rightX, currentY, chars.v);
     }
 
     // Draw corners
@@ -206,35 +199,6 @@ export class Container extends FlexContainer {
     }
   }
 
-  protected getContentWidth(): number {
-    const borderSize = this.borderStyle === "none" ? 0 : 2;
-    return Math.max(
-      0,
-      this.width - this.margin * 2 - borderSize - this.padding * 2
-    );
-  }
-
-  protected getContentHeight(): number {
-    const borderSize = this.borderStyle === "none" ? 0 : 2;
-    return Math.max(
-      0,
-      this.height - this.margin * 2 - borderSize - this.padding * 2
-    );
-  }
-
-  private updateContentArea(): void {
-    const contentWidth = this.getContentWidth();
-    const contentHeight = this.getContentHeight();
-
-    if (
-      contentWidth !== this.contentBuffer.width ||
-      contentHeight !== this.contentBuffer.height
-    ) {
-      this.contentBuffer.resize(contentWidth, contentHeight);
-      this.requestLayout();
-    }
-  }
-
   // Public setters
   public setTitle(title: string): void {
     if (this.title !== title) {
@@ -269,10 +233,5 @@ export class Container extends FlexContainer {
   public setTitleStyle(style: TitleStyle): void {
     this.titleStyle = { ...style };
     this.requestLayout();
-  }
-
-  protected onResize(): void {
-    super.onResize?.();
-    this.updateContentArea();
   }
 }

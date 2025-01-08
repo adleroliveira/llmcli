@@ -88,6 +88,7 @@ export interface ComponentProps {
   maxHeight?: number;
   maxWidth?: number;
   flexGrow?: number;
+  id?: string;
 }
 
 interface CursorState {
@@ -148,9 +149,9 @@ export abstract class TerminalComponent {
   protected onDestroy(): void {}
   protected onMount(): void {}
   protected onUnmount(): void {}
-  protected onResize(): void {}
   protected onContentOverflow(): void {}
   protected onDirtyCallback?: () => void;
+  protected onResizeCallback?: (size: Size) => void;
   protected _minWidth: number = 0;
   protected _minHeight: number = 0;
   protected _maxWidth: number = Infinity;
@@ -167,7 +168,9 @@ export abstract class TerminalComponent {
   };
 
   constructor(props: ComponentProps = {}) {
-    this.componentId = `${this.constructor.name}_${componentIdCounter++}`;
+    this.componentId = `${props.id || componentIdCounter++}::${
+      this.constructor.name
+    }`;
     this._x = props.x ?? 0;
     this._y = props.y ?? 0;
     this._width = props.width ?? 1;
@@ -247,22 +250,35 @@ export abstract class TerminalComponent {
 
   private getContentSize(availableSize?: Size): Size {
     let measurement: Size;
-
+    HierarchicalLogger.log(`${this.componentId}.getContentSize()`, {
+      source: !!this.contentManager ? "contentManager" : "component",
+      constraint: `${availableSize?.width}x${availableSize?.height}`,
+      currentSize: `${this.width}x${this.height}`,
+    });
+    HierarchicalLogger.startGroup();
     if (!this.contentManager) {
       measurement = this.measureContent(availableSize);
     } else {
       measurement = this.contentManager.measure(availableSize);
     }
-    HierarchicalLogger.log(`${this.componentId}.getContentSize()`, {
-      source: !!this.contentManager ? "contentManager" : "component",
-      constraint: `${availableSize?.width}x${availableSize?.height}`,
-      currentSize: `${this.width}x${this.height}`,
+    HierarchicalLogger.log(`Result`, {
       measurement: `${measurement.width}x${measurement.height}`,
     });
+    HierarchicalLogger.endGroup();
     return measurement;
   }
 
   protected measureContent(availableSize?: Size): Size {
+    if (this.children.length === 0) {
+      return {
+        width: this._explicitWidth || this.width,
+        height: this._explicitHeight || this.height,
+      };
+    }
+    if (this.children.length === 1) {
+      return this.children[0].measureContent();
+    }
+    // TODO: implement a strategy to measure and combine children content size
     return {
       width: this.width,
       height: this.height,
@@ -486,28 +502,16 @@ export abstract class TerminalComponent {
       );
     }
 
-    const contentSize = this.getContentDimensions();
-    const safeContentWidth = isFinite(contentSize.width)
-      ? contentSize.width
-      : Number.MAX_SAFE_INTEGER;
-    const safeContentHeight = isFinite(contentSize.height)
-      ? contentSize.height
-      : Number.MAX_SAFE_INTEGER;
-    const contentOverflow =
-      width < safeContentWidth || height < safeContentHeight;
-
-    HierarchicalLogger.log(`${this.componentId}.resolveSize()`, {
-      size: `${newWidth}x${newHeight}`,
-      preferred: `${preferredWidth}x${preferredHeight}`,
-      explicit: `${this._explicitWidth ?? "undefined"}x${
-        this._explicitHeight ?? "undefined"
-      }`,
-      // selfConstraints: `Min(${this._minWidth}x${this._minHeight}) Max(${this._maxWidth}x${this._maxHeight})`,
-      // layoutConstraints: `Min(${this._layoutConstraints.minWidth}x${this._layoutConstraints.minHeight}) Max(${this._layoutConstraints.maxWidth}x${this._layoutConstraints.maxHeight})`,
-      finalSize: `${width}x${height}`,
-      contentOverflow: contentOverflow ? "yes" : "no",
-    });
-
+    if (this.width != width || this.height != height) {
+      HierarchicalLogger.log(`${this.componentId}.resolveSize()`, {
+        size: `${newWidth}x${newHeight}`,
+        preferred: `${preferredWidth}x${preferredHeight}`,
+        explicit: `${this._explicitWidth ?? "undefined"}x${
+          this._explicitHeight ?? "undefined"
+        }`,
+        finalSize: `${width}x${height}`,
+      });
+    }
     return { width, height };
   }
 
@@ -668,25 +672,29 @@ export abstract class TerminalComponent {
     return this.parent;
   }
 
+  public getPosition(): Position {
+    return { x: this._x, y: this._y };
+  }
+
   public getFlexGrow(): number {
     return this._flexGrow;
   }
 
   // TODO: Fix this to also consider _minWidth and _minHeight (explicit constraints)
   public getMinWidth(): number {
-    return this._layoutConstraints.minWidth;
+    return Math.max(this._layoutConstraints.minWidth, this._minWidth);
   }
 
   public getMinHeight(): number {
-    return this._layoutConstraints.minHeight;
+    return Math.max(this._layoutConstraints.minHeight, this._minHeight);
   }
 
   public getMaxWidth(): number {
-    return this._layoutConstraints.maxWidth;
+    return Math.min(this._layoutConstraints.maxWidth, this._maxWidth);
   }
 
   public getMaxHeight(): number {
-    return this._layoutConstraints.maxHeight;
+    return Math.min(this._layoutConstraints.maxHeight, this._maxHeight);
   }
 
   public getMaxSize(): Size {
@@ -705,6 +713,12 @@ export abstract class TerminalComponent {
 
   public getLayoutConstraints(): Constraints {
     return this._layoutConstraints;
+  }
+
+  protected onResize(size: Size): void {
+    if (this.onResizeCallback) {
+      this.onResizeCallback(size);
+    }
   }
 
   protected resizeIfNeeded() {
@@ -789,6 +803,7 @@ export abstract class TerminalComponent {
     }
 
     this.setDimensions(width, height);
+    this.onResize({ width, height });
     this.requestLayout();
     this.updateChildrenConstraints();
     this.markDirty();
@@ -1066,7 +1081,6 @@ export abstract class TerminalComponent {
     }
 
     const isRootUpdate = !TerminalComponent.updateInProgress;
-    const isRootComponent = componentName === "App_0";
 
     // Start component group
     HierarchicalLogger.startGroup(`${componentName}_update`);
@@ -1097,7 +1111,6 @@ export abstract class TerminalComponent {
       if (!this._childrenUpdated && this.children.length > 0) {
         this._childrenUpdated = true;
 
-        // Don't start a new group, children updates should be at same level
         this.children.forEach((child) => {
           child.requestUpdate(UpdateSource.ChildUpdate);
         });
@@ -1154,24 +1167,44 @@ export abstract class TerminalComponent {
     };
   }
 
-  public getMinSize(): Size {
-    const measuredSize = this.getContentSize();
-    return {
-      width: Math.max(this._layoutConstraints.minWidth, measuredSize.width),
-      height: Math.max(this._layoutConstraints.minHeight, measuredSize.height),
-    };
-  }
-
   protected getAvailableSpace(): Size {
     return this.size;
   }
 
   public getPreferredSize(availableSpace?: Size): Size {
-    const contentSize = this.getContentMeasurement(availableSpace);
+    HierarchicalLogger.log(`${this.componentId}.getPreferredSize()`, {
+      availableSpace,
+    });
+    HierarchicalLogger.startGroup();
+    const minWidth = this.getMinWidth();
+    const maxWidth = this.getMaxWidth();
+    const minHeight = this.getMinHeight();
+    const maxHeight = this.getMaxHeight();
+    if (minWidth == maxWidth && minHeight == maxHeight) {
+      HierarchicalLogger.log(`Preferred Size: ${minWidth}x${minHeight}`);
+      HierarchicalLogger.endGroup();
+      return {
+        width: minWidth,
+        height: minHeight,
+      };
+    }
+    if (this._explicitWidth && this._explicitHeight) {
+      HierarchicalLogger.log(`Preferred Size: ${minWidth}x${minHeight}`);
+      HierarchicalLogger.endGroup();
+      return {
+        width: this._explicitWidth,
+        height: this._explicitHeight,
+      };
+    }
+    const contentSize = this.getContentSize(availableSpace);
     const preferred = {
       width: this._explicitWidth ?? contentSize.width,
       height: this._explicitHeight ?? contentSize.height,
     };
+    HierarchicalLogger.log(
+      `Preferred Size: ${preferred.width}x${preferred.height}`
+    );
+    HierarchicalLogger.endGroup();
     return preferred;
   }
 
@@ -1233,10 +1266,6 @@ export abstract class TerminalComponent {
     };
   }
 
-  public getContentMeasurement(availableSpace?: Size) {
-    return this.getContentSize(availableSpace);
-  }
-
   public layout(): void {
     this.performLayout();
   }
@@ -1257,6 +1286,10 @@ export abstract class TerminalComponent {
 
   public setOnDirtyCallback(callback: () => void) {
     this.onDirtyCallback = callback;
+  }
+
+  public setOnResizeCallback(callback: (size: Size) => void) {
+    this.onResizeCallback = callback;
   }
 }
 

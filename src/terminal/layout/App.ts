@@ -1,4 +1,4 @@
-import { TerminalComponent, ComponentProps } from "./TerminalComponent.js";
+import { TerminalComponent } from "./TerminalComponent.js";
 import {
   FlexContainer,
   FlexContainerProps,
@@ -6,7 +6,7 @@ import {
 import { Size } from "./index.js";
 import { HierarchicalLogger } from "./HierarchicalLogger.js";
 
-HierarchicalLogger.shouldLog = false;
+HierarchicalLogger.shouldLog = true;
 
 export interface AppProps extends FlexContainerProps {
   title?: string;
@@ -34,6 +34,7 @@ export class App extends TerminalComponent {
       height: props.height,
       flexGrow: 1,
       align: "stretch",
+      id: "root-container",
     });
     this.rootContainer.setLayoutConstraints({
       minWidth: props.width,

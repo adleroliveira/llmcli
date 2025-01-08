@@ -54,8 +54,9 @@ export class FlexContainer extends TerminalComponent {
 
   protected layoutChildren(): void {
     const isRow = this.direction === "row";
-    const mainSize = isRow ? this.width : this.height;
-    const crossSize = isRow ? this.height : this.width;
+    const mainSize = (isRow ? this.width : this.height) - this.getBorderSpace();
+    const crossSize =
+      (isRow ? this.height : this.width) - this.getBorderSpace();
     const visibleChildren = this.children.filter((child) => child.visible);
 
     if (visibleChildren.length === 0) return;
@@ -110,8 +111,8 @@ export class FlexContainer extends TerminalComponent {
 
       // First, get the preferred size with the main axis constraint
       const availableSpace: Size = isRow
-        ? { width: mainAxisSize, height: Infinity }
-        : { width: Infinity, height: mainAxisSize };
+        ? { width: mainAxisSize, height: this.getMaxHeight() }
+        : { width: this.getMaxWidth(), height: mainAxisSize };
 
       const preferredSize = child.getPreferredSize(availableSpace);
 
@@ -262,6 +263,45 @@ export class FlexContainer extends TerminalComponent {
       sizes,
       remainingSpace: availableSpace - usedSpace,
     };
+  }
+
+  protected measureContent(availableSize: Size): Size {
+    const visibleChildren = this.children.filter((child) => child.visible);
+    if (visibleChildren.length === 0) {
+      return { width: 0, height: 0 };
+    }
+
+    const isRow = this.direction === "row";
+    const totalGap = Math.max(0, (visibleChildren.length - 1) * this.gap);
+
+    // Get children's preferred sizes with available constraints
+    const childrenSizes = visibleChildren.map((child) => {
+      const childConstraints: Size = isRow
+        ? { width: availableSize.width, height: this.getMaxHeight() }
+        : { width: this.getMaxWidth(), height: availableSize.height };
+
+      return child.getPreferredSize(childConstraints);
+    });
+
+    if (isRow) {
+      // For row layout
+      const totalWidth =
+        childrenSizes.reduce((sum, size) => sum + size.width, 0) + totalGap;
+      const maxHeight = Math.max(...childrenSizes.map((size) => size.height));
+      return {
+        width: totalWidth,
+        height: maxHeight,
+      };
+    } else {
+      // For column layout
+      const maxWidth = Math.max(...childrenSizes.map((size) => size.width));
+      const totalHeight =
+        childrenSizes.reduce((sum, size) => sum + size.height, 0) + totalGap;
+      return {
+        width: maxWidth,
+        height: totalHeight,
+      };
+    }
   }
 
   public setDirection(direction: FlexDirection): void {
