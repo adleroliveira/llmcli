@@ -110,9 +110,7 @@ export class FlexContainer extends TerminalComponent {
             // Center the entire content block, accounting for border space
             mainPosition =
               Math.floor((remainingSpace + totalContentWidth) / 2) -
-              Math.floor(totalContentWidth / 2) +
-              Math.floor(borderSpace); // Add half border space for centering
-            break;
+              Math.floor(totalContentWidth / 2);
           }
           case "end": {
             mainPosition = remainingSpace + Math.floor(borderSpace); // Account for left border
@@ -347,10 +345,10 @@ export class FlexContainer extends TerminalComponent {
       const childConstraints: Size = isRow
         ? {
             width: mainAxisSpaceAfterGaps,
-            height: availableSize.height - borderSpace,
+            height: availableSize.height,
           }
         : {
-            width: availableSize.width - borderSpace,
+            width: availableSize.width,
             height: mainAxisSpaceAfterGaps,
           };
 

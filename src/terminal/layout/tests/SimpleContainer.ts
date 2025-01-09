@@ -20,7 +20,7 @@ const container1 = new Container({
     color: SGRColor.BrightYellow,
     bold: true,
   },
-  id: "LeftBox",
+  id: "BorderedContainer",
   title: "Container 1",
   flexGrow: 1,
 });
@@ -32,16 +32,7 @@ container1.setOnResizeCallback((size) => {
 });
 
 const text1 = new StyledTextComponent({
-  text: `
-Just a simple text, just a simple text, just a simple text
-Just a simple text, just a simple text, just a simple text Just a simple text, just a simple text, just a simple text
-Just a simple text, just a simple text, just a simple text Just a simple text, ju
-
-Just a simple text, just a simple text, just 
-Just a simple text, jus
-
-Just a simple text, just a simple text, just a simple text Just a simple text, just a simple text
-  `,
+  text: `Just a simple text, just a simple textJust a simple text, just a simple text Just a simple text, just a simple text Just a simple text, just a simple text Just a simple text, just a simple text Just a simple text, just a simple text Just a simple text, just a simple text Just a simple text, just a simple text Just a simple text, just a simple text Just a simple text, just a simple text`,
   id: "Text1",
 });
 container1.addChild(text1);

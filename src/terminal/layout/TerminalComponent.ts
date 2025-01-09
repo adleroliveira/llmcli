@@ -305,9 +305,10 @@ export abstract class TerminalComponent {
   protected updateChildrenConstraints(): void {
     this.children.forEach((child) => {
       // New constraints start with parent bounds
+      const borderSpace = this.getBorderSpace();
       const newConstraints = {
-        maxWidth: this.width,
-        maxHeight: this.height,
+        maxWidth: this.width - borderSpace,
+        maxHeight: this.height - borderSpace,
         minWidth: 0,
         minHeight: 0,
       };

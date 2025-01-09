@@ -64,10 +64,16 @@ export class Container extends FlexContainer {
   protected layoutChildren(): void {
     const borderSpace = this.getBorderSpace();
 
-    // Let FlexContainer handle the main layout
+    this.children.forEach((child) => {
+      const currentConstraints = child.getLayoutConstraints();
+      child.setLayoutConstraints({
+        ...currentConstraints,
+        maxHeight: Math.max(0, this.height - borderSpace),
+      });
+    });
+
     super.layoutChildren();
 
-    // Only adjust positions after main layout is done
     const offset = borderSpace / 2;
     this.children.forEach((child) => {
       const pos = child.getPosition();
@@ -78,6 +84,11 @@ export class Container extends FlexContainer {
   protected measureContent(availableSpace: Size): Size {
     // First, calculate space needed for border
     const borderSpace = this.getBorderSpace();
+
+    const adjustedSpace = {
+      width: availableSpace.width - borderSpace,
+      height: availableSpace.height - borderSpace,
+    };
 
     if (this.children.length === 0) {
       // Return 0 size if no explicit dimensions are set
@@ -95,26 +106,11 @@ export class Container extends FlexContainer {
     }
 
     // First get natural content size without constraints
-    const contentSize = super.measureContent({
-      width: availableSpace
-        ? Math.max(0, availableSpace.width - borderSpace)
-        : Infinity,
-      height: Infinity, // Let content determine its natural height first
-    });
-
-    // Add border space to get total natural size
-    const naturalSize = {
-      width: contentSize.width + borderSpace,
-      height: contentSize.height + borderSpace,
-    };
+    const contentSize = super.measureContent(adjustedSpace);
 
     return {
-      width: availableSpace
-        ? Math.min(availableSpace.width, naturalSize.width)
-        : naturalSize.width,
-      height: availableSpace
-        ? Math.min(availableSpace.height, naturalSize.height)
-        : naturalSize.height,
+      width: contentSize.width + borderSpace,
+      height: contentSize.height + borderSpace,
     };
   }
 
