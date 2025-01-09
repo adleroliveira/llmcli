@@ -64,36 +64,57 @@ export class Container extends FlexContainer {
   protected layoutChildren(): void {
     const borderSpace = this.getBorderSpace();
 
-    // Layout children
+    // Let FlexContainer handle the main layout
     super.layoutChildren();
 
-    // Adjust children positions for border and padding
+    // Only adjust positions after main layout is done
+    const offset = borderSpace / 2;
     this.children.forEach((child) => {
-      const position = child.getPosition();
-      child.setPosition(
-        position.x + borderSpace / 2,
-        position.y + borderSpace / 2
-      );
+      const pos = child.getPosition();
+      child.setPosition(pos.x + offset, pos.y + offset);
     });
   }
 
   protected measureContent(availableSpace: Size): Size {
-    // Calculate exact space needed for borders
+    // First, calculate space needed for border
     const borderSpace = this.getBorderSpace();
 
-    // Adjust available space for content measurement
-    const contentAvailableSpace = {
-      width: Math.max(0, availableSpace.width - borderSpace),
-      height: Math.max(0, availableSpace.height - borderSpace),
+    if (this.children.length === 0) {
+      // Return 0 size if no explicit dimensions are set
+      if (
+        this._explicitWidth === undefined &&
+        this._explicitHeight === undefined
+      ) {
+        return { width: borderSpace, height: borderSpace };
+      }
+      // Otherwise return the explicit dimensions or minimum constraints
+      return {
+        width: this._explicitWidth || this.getMinWidth(),
+        height: this._explicitHeight || this.getMinHeight(),
+      };
+    }
+
+    // First get natural content size without constraints
+    const contentSize = super.measureContent({
+      width: availableSpace
+        ? Math.max(0, availableSpace.width - borderSpace)
+        : Infinity,
+      height: Infinity, // Let content determine its natural height first
+    });
+
+    // Add border space to get total natural size
+    const naturalSize = {
+      width: contentSize.width + borderSpace,
+      height: contentSize.height + borderSpace,
     };
 
-    // Measure actual content size needed
-    const contentSize = super.measureContent(contentAvailableSpace);
-
-    // Calculate final size - only add the necessary border space
     return {
-      width: Math.min(availableSpace.width, contentSize.width + borderSpace),
-      height: Math.min(availableSpace.height, contentSize.height + borderSpace),
+      width: availableSpace
+        ? Math.min(availableSpace.width, naturalSize.width)
+        : naturalSize.width,
+      height: availableSpace
+        ? Math.min(availableSpace.height, naturalSize.height)
+        : naturalSize.height,
     };
   }
 

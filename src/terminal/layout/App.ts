@@ -6,7 +6,7 @@ import {
 import { Size } from "./index.js";
 import { HierarchicalLogger } from "./HierarchicalLogger.js";
 
-HierarchicalLogger.shouldLog = true;
+HierarchicalLogger.shouldLog = false;
 
 export interface AppProps extends FlexContainerProps {
   title?: string;
@@ -30,8 +30,8 @@ export class App extends TerminalComponent {
     this.title = props.title ?? "Terminal Application";
     this.rootContainer = new FlexContainer({
       ...props,
-      width: props.width,
-      height: props.height,
+      width: undefined,
+      height: undefined,
       flexGrow: 1,
       align: "stretch",
       id: "root-container",
@@ -79,6 +79,16 @@ export class App extends TerminalComponent {
     this._explicitWidth = width;
     this._explicitHeight = height;
     super.resize(width, height);
+    this._layoutConstraints = {
+      maxHeight: height,
+      maxWidth: width,
+      minHeight: height,
+      minWidth: width,
+    };
+  }
+
+  protected override updateChildrenConstraints(): void {
+    this.rootContainer.setLayoutConstraints(this.getLayoutConstraints());
   }
 
   public override resize(width: number, height: number): void {
@@ -86,14 +96,9 @@ export class App extends TerminalComponent {
     this._minWidth = width;
     this._maxHeight = height;
     this._maxWidth = width;
-    this._layoutConstraints = {
-      maxHeight: height,
-      maxWidth: width,
-      minHeight: height,
-      minWidth: width,
-    };
+
     this.setSize(width, height);
-    this.rootContainer.setSize(width, height);
+    this.rootContainer.setLayoutConstraints(this.getLayoutConstraints());
   }
 
   public setDefaultFocusedComponent(component: TerminalComponent): void {

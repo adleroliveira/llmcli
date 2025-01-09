@@ -5,8 +5,8 @@ import { SGRColor } from "../TerminalBuffer.js";
 import { StyledTextComponent } from "../components/StyledTextComponent.js";
 
 const app = new App({
-  width: 61, //process.stdout.columns,
-  height: 16, //process.stdout.rows,
+  width: process.stdout.columns,
+  height: process.stdout.rows,
   title: "StyledTextComponent Flex Example",
   direction: "column",
 });
@@ -18,6 +18,7 @@ const container1 = new Container({
     bold: true,
   },
   title: "Container 1",
+  align: "start",
   flexGrow: 1,
 });
 

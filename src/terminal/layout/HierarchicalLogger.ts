@@ -70,6 +70,7 @@ export class HierarchicalLogger {
       : `${indent}${arrow}${action}`;
 
     DebugLogger.log(line);
+    // console.log(line);
     this.isNewTrace = false;
   }
 

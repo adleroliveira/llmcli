@@ -276,6 +276,8 @@ export abstract class TerminalComponent {
       };
     }
     if (this.children.length === 1) {
+      // TODO: Determine if explicit size (if it exists) should take precedence
+      // over delegating to this.children[0].measureContent();
       return this.children[0].measureContent();
     }
     // TODO: implement a strategy to measure and combine children content size
@@ -298,6 +300,67 @@ export abstract class TerminalComponent {
 
   protected getContentOffset(): Position {
     return { x: 0, y: 0 };
+  }
+
+  protected updateChildrenConstraints(): void {
+    this.children.forEach((child) => {
+      // New constraints start with parent bounds
+      const newConstraints = {
+        maxWidth: this.width,
+        maxHeight: this.height,
+        minWidth: 0,
+        minHeight: 0,
+      };
+
+      // Preserve explicit width if set
+      if (child._explicitWidth) {
+        newConstraints.minWidth = child._explicitWidth;
+        newConstraints.maxWidth = child._explicitWidth;
+      }
+
+      // Preserve explicit height if set
+      if (child._explicitHeight) {
+        newConstraints.minHeight = child._explicitHeight;
+        newConstraints.maxHeight = child._explicitHeight;
+      }
+
+      // Preserve explicit minimum constraints
+      if (child._minWidth !== undefined) {
+        newConstraints.minWidth = Math.max(
+          newConstraints.minWidth,
+          child._minWidth
+        );
+      }
+      if (child._minHeight !== undefined) {
+        newConstraints.minHeight = Math.max(
+          newConstraints.minHeight,
+          child._minHeight
+        );
+      }
+
+      if (
+        newConstraints.minWidth != child._layoutConstraints.minWidth ||
+        newConstraints.minHeight != child._layoutConstraints.minHeight ||
+        newConstraints.maxWidth != child._layoutConstraints.maxWidth ||
+        newConstraints.maxHeight != child._layoutConstraints.maxHeight
+      ) {
+        HierarchicalLogger.log(
+          `${this.componentId}.updateChildrenConstraints()`,
+          {
+            childId: child.getComponentId(),
+            oldConstraints: stringifyConstraints(child._layoutConstraints),
+            newConstraints: stringifyConstraints(newConstraints),
+          }
+        );
+
+        // Apply new constraints
+        HierarchicalLogger.startGroup();
+        child.setLayoutConstraints(newConstraints);
+        HierarchicalLogger.endGroup();
+      } else {
+        HierarchicalLogger.log("Skipping updateChildrenConstraints");
+      }
+    });
   }
 
   protected layoutChildren(): void {
@@ -341,13 +404,13 @@ export abstract class TerminalComponent {
     }
 
     this.applySize(finalSize);
+    this.updateChildrenConstraints();
 
     if (this.children.length > 0) {
       HierarchicalLogger.log(`${this.componentId}.layoutChildren()`, {
         childCount: this.children.length,
       });
 
-      this.updateChildrenConstraints();
       HierarchicalLogger.startGroup();
       this.layoutChildren();
       HierarchicalLogger.endGroup();
@@ -363,78 +426,9 @@ export abstract class TerminalComponent {
     HierarchicalLogger.endGroup();
   }
 
-  protected updateChildrenConstraints(
-    direction: Direction = "vertical",
-    forcedConstraints?: Partial<Constraints>
-  ): void {
-    if (this.children.length == 0) return;
-    const visibleChildren = this.children.filter((child) => child.visible);
-    if (visibleChildren.length == 0) return;
-
-    const allChildWithinConstraint = visibleChildren.every((child) =>
-      child.isSizeWithinConstraints(this.size)
-    );
-
-    if (allChildWithinConstraint) {
-      return;
-    }
-
-    HierarchicalLogger.log(`${this.componentId}.updateChildrenConstraints()`, {
-      direction,
-      visibleChildren: visibleChildren.length,
-      currentSize: `${this.width}x${this.height}`,
-    });
-
-    const availableSpace = this.getAvailableSpace();
-    const availableSize =
-      direction == "vertical" ? availableSpace.height : availableSpace.width;
-    const maxSize = Math.floor(availableSize / visibleChildren.length);
-
-    HierarchicalLogger.log("Available space calculation", {
-      availableSpace: `${availableSpace.width}x${availableSpace.height}`,
-    });
-
-    const maxHeight =
-      forcedConstraints?.maxHeight || direction == "vertical"
-        ? maxSize
-        : availableSpace.height;
-    const maxWidth =
-      forcedConstraints?.maxWidth || direction == "vertical"
-        ? availableSpace.width
-        : maxSize;
-    const minWidth = forcedConstraints?.minWidth || 1;
-    const minHeight = forcedConstraints?.minHeight || 1;
-
-    const newConstraints = {
-      maxWidth,
-      maxHeight,
-      minWidth,
-      minHeight,
-    };
-
-    HierarchicalLogger.log("Calculated constraints", {
-      constraints: stringifyConstraints(newConstraints),
-    });
-
-    visibleChildren.forEach((child) => {
-      HierarchicalLogger.log(`Updating child ${child.componentId}`, {
-        currentSize: `${child.width}x${child.height}`,
-        currentConstraints: stringifyConstraints(child.getLayoutConstraints()),
-        newConstraints: stringifyConstraints(newConstraints),
-      });
-
-      HierarchicalLogger.startGroup();
-      child.setLayoutConstraints(newConstraints);
-      HierarchicalLogger.endGroup();
-    });
-  }
-
   protected resolveSize(size?: Size): Size {
     // Calculate effective constraints first
-    const effectiveMinWidth = Math.max(
-      this._minWidth,
-      this._layoutConstraints.minWidth
-    );
+    const effectiveMinWidth = this.getMinWidth();
 
     const effectiveMaxWidth = Math.min(
       isFinite(this._maxWidth) ? this._maxWidth : Number.MAX_SAFE_INTEGER,
@@ -443,10 +437,7 @@ export abstract class TerminalComponent {
         : Number.MAX_SAFE_INTEGER
     );
 
-    const effectiveMinHeight = Math.max(
-      this._minHeight,
-      this._layoutConstraints.minHeight
-    );
+    const effectiveMinHeight = this.getMinHeight();
 
     const effectiveMaxHeight = Math.min(
       isFinite(this._maxHeight) ? this._maxHeight : Number.MAX_SAFE_INTEGER,
@@ -506,9 +497,7 @@ export abstract class TerminalComponent {
       HierarchicalLogger.log(`${this.componentId}.resolveSize()`, {
         size: `${newWidth}x${newHeight}`,
         preferred: `${preferredWidth}x${preferredHeight}`,
-        explicit: `${this._explicitWidth ?? "undefined"}x${
-          this._explicitHeight ?? "undefined"
-        }`,
+        explicit: `${this._explicitWidth}x${this._explicitHeight}`,
         finalSize: `${width}x${height}`,
       });
     }
@@ -523,8 +512,9 @@ export abstract class TerminalComponent {
 
     if (this.width !== width || this.height !== height) {
       this.setDimensions(width, height);
-      this.updateChildrenConstraints();
     }
+
+    this.requestLayout();
   }
 
   protected addChildBase(child: TerminalComponent): void {
@@ -547,8 +537,6 @@ export abstract class TerminalComponent {
     // Set parent first so child can access parent dimensions
     this.children.push(child);
     child.parent = this;
-
-    this.updateChildrenConstraints();
 
     // Request layout since we added a new child
     this.requestLayout();
@@ -685,8 +673,16 @@ export abstract class TerminalComponent {
     return Math.max(this._layoutConstraints.minWidth, this._minWidth);
   }
 
+  public getStrictMinWidth(): number {
+    return this._minWidth;
+  }
+
   public getMinHeight(): number {
     return Math.max(this._layoutConstraints.minHeight, this._minHeight);
+  }
+
+  public getStrictMinHeight(): number {
+    return this._minHeight;
   }
 
   public getMaxWidth(): number {
@@ -722,13 +718,13 @@ export abstract class TerminalComponent {
   }
 
   protected resizeIfNeeded() {
-    if (this.isSizeWithinConstraints()) {
-      HierarchicalLogger.log("Size within constraints, skipping resize", {
-        size: `${this.width}x${this.height}`,
-        constraints: stringifyConstraints(this._layoutConstraints),
-      });
-      return;
-    }
+    // if (this.isSizeWithinConstraints()) {
+    //   HierarchicalLogger.log("Size within constraints, skipping resize", {
+    //     size: `${this.width}x${this.height}`,
+    //     constraints: stringifyConstraints(this._layoutConstraints),
+    //   });
+    //   return;
+    // }
 
     // Instead of getting preferred size, just adjust current size to fit constraints
     const newWidth = Math.min(
@@ -747,13 +743,11 @@ export abstract class TerminalComponent {
 
   protected isSizeWithinConstraints(size?: Size): boolean {
     const { width, height } = size ?? this.size;
-    const { maxWidth, maxHeight, minWidth, minHeight } =
-      this._layoutConstraints;
     return (
-      width >= minWidth &&
-      width <= maxWidth &&
-      height >= minHeight &&
-      height <= maxHeight
+      width >= this.getMinWidth() &&
+      width <= this.getMaxWidth() &&
+      height >= this.getMinHeight() &&
+      height <= this.getMaxHeight()
     );
   }
 
@@ -803,10 +797,10 @@ export abstract class TerminalComponent {
     }
 
     this.setDimensions(width, height);
-    this.onResize({ width, height });
-    this.requestLayout();
-    this.updateChildrenConstraints();
     this.markDirty();
+    this.requestLayout(); // Request layout before callbacks
+    this.onResize({ width, height }); // Component's own callback
+    this.parent?.onChildSizeChanged({ width, height }, this); // Parent notification last
 
     HierarchicalLogger.endGroup();
     HierarchicalLogger.endTrace();
@@ -878,18 +872,6 @@ export abstract class TerminalComponent {
 
     this._width = width;
     this._height = height;
-
-    const contentSize = this.getContentDimensions();
-    const safeContentWidth = isFinite(contentSize.width)
-      ? contentSize.width
-      : Number.MAX_SAFE_INTEGER;
-    const safeContentHeight = isFinite(contentSize.height)
-      ? contentSize.height
-      : Number.MAX_SAFE_INTEGER;
-    this._contentOverflow =
-      width < safeContentWidth || height < safeContentHeight;
-    if (this._contentOverflow) this.onContentOverflow();
-
     this.buffer.resize(width, height);
     this.markDirty();
   }
@@ -1171,17 +1153,27 @@ export abstract class TerminalComponent {
     return this.size;
   }
 
+  protected onChildSizeChanged(newSize: Size, child: TerminalComponent): void {}
+
   public getPreferredSize(availableSpace?: Size): Size {
     HierarchicalLogger.log(`${this.componentId}.getPreferredSize()`, {
       availableSpace,
     });
     HierarchicalLogger.startGroup();
+
     const minWidth = this.getMinWidth();
     const maxWidth = this.getMaxWidth();
     const minHeight = this.getMinHeight();
     const maxHeight = this.getMaxHeight();
-    if (minWidth == maxWidth && minHeight == maxHeight) {
-      HierarchicalLogger.log(`Preferred Size: ${minWidth}x${minHeight}`);
+    if (
+      minWidth == maxWidth &&
+      minHeight == maxHeight &&
+      minWidth <= (availableSpace?.width || Infinity) &&
+      minHeight <= (availableSpace?.height || Infinity)
+    ) {
+      HierarchicalLogger.log(
+        `Preferred Size (min=max): ${minWidth}x${minHeight}`
+      );
       HierarchicalLogger.endGroup();
       return {
         width: minWidth,
@@ -1189,7 +1181,9 @@ export abstract class TerminalComponent {
       };
     }
     if (this._explicitWidth && this._explicitHeight) {
-      HierarchicalLogger.log(`Preferred Size: ${minWidth}x${minHeight}`);
+      HierarchicalLogger.log(
+        `Preferred Size (explicit): ${this._explicitWidth}x${this._explicitHeight}`
+      );
       HierarchicalLogger.endGroup();
       return {
         width: this._explicitWidth,
@@ -1202,7 +1196,7 @@ export abstract class TerminalComponent {
       height: this._explicitHeight ?? contentSize.height,
     };
     HierarchicalLogger.log(
-      `Preferred Size: ${preferred.width}x${preferred.height}`
+      `Preferred Size (content): ${preferred.width}x${preferred.height}`
     );
     HierarchicalLogger.endGroup();
     return preferred;
