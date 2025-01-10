@@ -1,6 +1,7 @@
 import { FlexContainer, FlexContainerProps } from "./FlexContainer.js";
 import { SGRColor } from "../TerminalBuffer.js";
 import { Size, Position } from "../index.js";
+import { HierarchicalLogger } from "../HierarchicalLogger.js";
 
 export type BorderStyle = "none" | "single" | "double" | "rounded";
 
@@ -63,7 +64,7 @@ export class Container extends FlexContainer {
 
   protected layoutChildren(): void {
     const borderSpace = this.getBorderSpace();
-
+    HierarchicalLogger.startGroup();
     this.children.forEach((child) => {
       const currentConstraints = child.getLayoutConstraints();
       child.setLayoutConstraints({
@@ -71,6 +72,7 @@ export class Container extends FlexContainer {
         maxHeight: Math.max(0, this.height - borderSpace),
       });
     });
+    HierarchicalLogger.endGroup();
 
     super.layoutChildren();
 

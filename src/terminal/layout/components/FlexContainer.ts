@@ -8,6 +8,7 @@ import { Size } from "../index.js";
 
 interface FlexDistributionResult {
   childrenDistribution: Size[];
+  childrenPreferredSizes: Size[];
   availableSize: Size;
   remainingSpace: number;
 }
@@ -81,7 +82,8 @@ export class FlexContainer extends TerminalComponent {
       this.lastChildrenSizeDistribution.availableSize.height !== this.height
     ) {
       HierarchicalLogger.log(
-        `${this.componentId}::calculateChildrenSizeDistribution()`
+        `${this.componentId}.calculateChildrenSizeDistribution()`,
+        { childCount: this.children.length }
       );
       HierarchicalLogger.startGroup();
       this.calculateChildrenSizeDistribution();
@@ -94,6 +96,10 @@ export class FlexContainer extends TerminalComponent {
     let mainPosition = 0;
     let crossPosition = 0;
 
+    HierarchicalLogger.log(`${this.componentId}.layoutChildren()`, {
+      childCount: this.children.length,
+    });
+    HierarchicalLogger.startGroup();
     visibleChildren.forEach((child, i) => {
       let effectiveGap = this.gap;
 
@@ -155,12 +161,12 @@ export class FlexContainer extends TerminalComponent {
         ? childrenSizeDistribution.childrenDistribution[i].height
         : childrenSizeDistribution.childrenDistribution[i].width;
       const crossSize = isRow ? this.height : this.width;
+      const borderSpace = this.getBorderSpace();
+      const effectiveCrossSize = crossSize - borderSpace;
 
       if (this.align === "stretch") {
         crossAxisSize = crossSize;
       } else {
-        const borderSpace = this.getBorderSpace();
-        const effectiveCrossSize = crossSize - borderSpace;
         const availableCrossSpace = effectiveCrossSize - crossAxisSize;
         switch (this.align) {
           case "center":
@@ -177,8 +183,8 @@ export class FlexContainer extends TerminalComponent {
         child.setLayoutConstraints({
           minWidth: mainAxisSize,
           maxWidth: mainAxisSize,
-          minHeight: this.align === "stretch" ? crossSize : 0,
-          maxHeight: crossSize,
+          minHeight: this.align === "stretch" ? effectiveCrossSize : this.lastChildrenSizeDistribution?.childrenPreferredSizes[i].height || 0,
+          maxHeight: effectiveCrossSize,
         });
 
         // Apply gap before setting position (except for first child)
@@ -188,8 +194,8 @@ export class FlexContainer extends TerminalComponent {
         child.setPosition(mainPosition, crossPosition);
       } else {
         child.setLayoutConstraints({
-          minWidth: this.align === "stretch" ? crossSize : 0,
-          maxWidth: crossSize,
+          minWidth: this.align === "stretch" ? effectiveCrossSize : this.lastChildrenSizeDistribution?.childrenPreferredSizes[i].width || 0,
+          maxWidth: effectiveCrossSize,
           minHeight: mainAxisSize,
           maxHeight: mainAxisSize,
         });
@@ -204,6 +210,7 @@ export class FlexContainer extends TerminalComponent {
       child.layout();
       mainPosition += mainAxisSize;
     });
+    HierarchicalLogger.endGroup();
   }
 
   private calculateTotalSize(
@@ -265,6 +272,16 @@ export class FlexContainer extends TerminalComponent {
       ? Math.max(0, availableSize.width - totalGap)
       : Math.max(0, availableSize.height - totalGap);
 
+    const childConstraints: Size = isRow
+      ? {
+        width: mainAxisSpaceAfterGaps,
+        height: availableSize.height,
+      }
+      : {
+        width: availableSize.width,
+        height: mainAxisSpaceAfterGaps,
+      };
+
     // Rest of your existing flex calculation logic stays exactly the same
     const childrenInformation = visibleChildren.map((child) => {
       return {
@@ -276,9 +293,13 @@ export class FlexContainer extends TerminalComponent {
         maxHeight: child.getMaxHeight(),
         flexGrow: child.getFlexGrow(),
         id: child.getComponentId(),
+        naturalSize: child.getPreferredSize(childConstraints),
         component: child,
       };
     });
+
+
+    const childrenPreferredSizes = childrenInformation.map(child => child.naturalSize);
 
     // Your existing all-flex optimization
     const allChildrenHaveFlexGrow = childrenInformation.every(
@@ -290,6 +311,7 @@ export class FlexContainer extends TerminalComponent {
         (sum, child) => sum + child.flexGrow,
         0
       );
+
 
       const childrenSizes = childrenInformation.map((child) => {
         const strictMin = isRow ? child.strictMinWidth : child.strictMinHeight;
@@ -314,13 +336,13 @@ export class FlexContainer extends TerminalComponent {
 
         return isRow
           ? {
-              width: mainAxisSize,
-              height: availableSize.height - borderSpace,
-            }
+            width: mainAxisSize,
+            height: availableSize.height - borderSpace,
+          }
           : {
-              width: availableSize.width - borderSpace,
-              height: mainAxisSize,
-            };
+            width: availableSize.width - borderSpace,
+            height: mainAxisSize,
+          };
       });
 
       const totalSize = this.calculateTotalSize(
@@ -332,6 +354,7 @@ export class FlexContainer extends TerminalComponent {
 
       this.lastChildrenSizeDistribution = {
         childrenDistribution: childrenSizes,
+        childrenPreferredSizes,
         availableSize,
         remainingSpace: 0,
       };
@@ -341,19 +364,7 @@ export class FlexContainer extends TerminalComponent {
 
     // Handle mixed flex/non-flex case
     // Phase 1: Get initial natural sizes
-    const childrenNaturalSizes = childrenInformation.map((child) => {
-      const childConstraints: Size = isRow
-        ? {
-            width: mainAxisSpaceAfterGaps,
-            height: availableSize.height,
-          }
-        : {
-            width: availableSize.width,
-            height: mainAxisSpaceAfterGaps,
-          };
-
-      return child.component.getPreferredSize(childConstraints);
-    });
+    const childrenNaturalSizes = childrenInformation.map((child) => child.naturalSize);
 
     const totalNaturalSize = this.calculateTotalSize(
       childrenNaturalSizes,
@@ -373,6 +384,7 @@ export class FlexContainer extends TerminalComponent {
     if (mainAxisNaturalSize <= availableMainAxisSize) {
       this.lastChildrenSizeDistribution = {
         childrenDistribution: childrenNaturalSizes,
+        childrenPreferredSizes,
         availableSize,
         remainingSpace: availableMainAxisSize - mainAxisNaturalSize,
       };
@@ -388,7 +400,7 @@ export class FlexContainer extends TerminalComponent {
     );
 
     // First handle non-flex children
-    const nonFlexSizes = nonFlexChildren.map((child, index) => {
+    const nonFlexSizes = nonFlexChildren.map((child) => {
       const originalIndex = childrenInformation.indexOf(child);
       const naturalSize = isRow
         ? childrenNaturalSizes[originalIndex].width
@@ -445,11 +457,15 @@ export class FlexContainer extends TerminalComponent {
 
     // Create final size constraints
     const childrenFinalSizes = allSizes.map(({ child, mainAxisSize }) => {
-      const childConstraints: Size = isRow
-        ? { width: mainAxisSize, height: availableSize.height - borderSpace }
-        : { width: availableSize.width - borderSpace, height: mainAxisSize };
+      const updatedChildConstraints: Size = isRow
+        ? { width: mainAxisSize, height: availableSize.height }
+        : { width: availableSize.width, height: mainAxisSize };
 
-      return child.component.getPreferredSize(childConstraints);
+
+      if (updatedChildConstraints.width == childConstraints.width && updatedChildConstraints.height == childConstraints.height) {
+        return child.naturalSize
+      }
+      return child.component.getPreferredSize(updatedChildConstraints);
     });
 
     const finalSize = this.calculateTotalSize(
@@ -461,6 +477,7 @@ export class FlexContainer extends TerminalComponent {
 
     this.lastChildrenSizeDistribution = {
       childrenDistribution: childrenFinalSizes,
+      childrenPreferredSizes,
       availableSize,
       remainingSpace: 0,
     };
